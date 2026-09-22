@@ -1,7 +1,8 @@
 from datetime import datetime, timezone
 from uuid import uuid4
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from pydantic import BaseModel, Field
 
 from app.api.auth import get_current_user
 from app.core.config import get_settings
@@ -10,11 +11,21 @@ from app.schemas.documents import DocumentAnalysisResponse, DocumentProcessRespo
 from app.services.document_processor import (
     DocumentProcessingError,
     document_stats,
-    extract_text,
+    extract_text_async,
 )
-from app.services.intelligence import analyze_document
+from app.services.intelligence import analyze_document, answer_question
 
 router = APIRouter(prefix="/api/v1/documents", tags=["documents"])
+
+
+class AskRequest(BaseModel):
+    question: str = Field(..., min_length=1, max_length=2000)
+
+
+class AskResponse(BaseModel):
+    document_id: str | None = None
+    question: str
+    answer: str
 
 
 @router.get("")
@@ -77,7 +88,7 @@ async def _read_and_extract(file: UploadFile) -> tuple[bytes, str]:
         )
 
     try:
-        text = extract_text(file.filename, file.content_type, data)
+        text = await extract_text_async(file.filename, file.content_type, data)
     except DocumentProcessingError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
@@ -103,7 +114,7 @@ async def upload_document(file: UploadFile = File(...)):
 @router.post("/analyze", response_model=DocumentAnalysisResponse)
 async def analyze_uploaded_document(file: UploadFile = File(...)):
     _, text = await _read_and_extract(file)
-    analysis = analyze_document(text)
+    analysis = await analyze_document(text)
 
     return DocumentAnalysisResponse(
         filename=file.filename or "document",
@@ -112,6 +123,51 @@ async def analyze_uploaded_document(file: UploadFile = File(...)):
         confidence=analysis["confidence"],
         summary=analysis["summary"],
     )
+
+
+@router.post("/ask", response_model=AskResponse)
+async def ask_about_upload(
+    file: UploadFile = File(...),
+    question: str = Form(..., min_length=1, max_length=2000),
+):
+    """Upload a document and ask a question about it in one request."""
+    _, text = await _read_and_extract(file)
+    answer = await answer_question(text, question)
+    return AskResponse(question=question, answer=answer)
+
+
+@router.post("/{document_id}/ask", response_model=AskResponse)
+async def ask_about_document(
+    document_id: str,
+    body: AskRequest,
+    user=Depends(get_current_user),
+):
+    """Ask a question about a previously persisted document."""
+    try:
+        response = (
+            get_admin_client()
+            .table("documents")
+            .select("id,extracted_text")
+            .eq("id", document_id)
+            .eq("user_id", str(user.id))
+            .maybe_single()
+            .execute()
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail="Unable to load document.") from exc
+
+    if not response.data:
+        raise HTTPException(status_code=404, detail="Document not found.")
+
+    text = response.data.get("extracted_text") or ""
+    if not text.strip():
+        raise HTTPException(
+            status_code=422,
+            detail="Document has no extracted text to answer questions against.",
+        )
+
+    answer = await answer_question(text, body.question)
+    return AskResponse(document_id=document_id, question=body.question, answer=answer)
 
 
 @router.post("/persist")
@@ -137,7 +193,7 @@ async def persist_document(
         )
 
         characters, words = document_stats(text)
-        analysis = analyze_document(text)
+        analysis = await analyze_document(text)
 
         response = (
             client.table("documents")
