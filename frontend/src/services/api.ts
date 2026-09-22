@@ -42,3 +42,20 @@ export async function listDocuments(accessToken: string) {
     },
   });
 }
+
+export async function getDocument(documentId: string, accessToken: string) {
+  return apiRequest(`/documents/${documentId}`, {
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+    },
+  });
+}
+
+export async function deleteDocument(documentId: string, accessToken: string) {
+  return apiRequest(`/documents/${documentId}`, {
+    method: "DELETE",
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+    },
+  });
+}
