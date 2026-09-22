@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Alert,
   AppBar,
@@ -7,6 +7,7 @@ import {
   Card,
   CardContent,
   Chip,
+  CircularProgress,
   Container,
   Dialog,
   DialogActions,
@@ -31,10 +32,11 @@ import RefreshOutlinedIcon from "@mui/icons-material/RefreshOutlined";
 import ArticleOutlinedIcon from "@mui/icons-material/ArticleOutlined";
 import CheckCircleOutlineIcon from "@mui/icons-material/CheckCircleOutline";
 import QuestionAnswerOutlinedIcon from "@mui/icons-material/QuestionAnswerOutlined";
-import { supabase } from "./services/supabase";
+import { supabase, isSupabaseConfigured } from "./services/supabase";
 import {
   askDocument,
   deleteDocument,
+  getApiBaseUrl,
   getDocument,
   listDocuments,
   uploadDocument,
@@ -69,8 +71,20 @@ function formatDate(value?: string) {
   return new Date(value).toLocaleString();
 }
 
+function isNetworkError(message: string) {
+  const m = message.toLowerCase();
+  return (
+    m.includes("failed to fetch") ||
+    m.includes("cannot reach the api") ||
+    m.includes("networkerror") ||
+    m.includes("load failed") ||
+    m.includes("network request failed")
+  );
+}
+
 function App() {
   const [session, setSession] = useState<Session | null>(null);
+  const [authReady, setAuthReady] = useState(false);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
@@ -79,6 +93,7 @@ function App() {
   const [documents, setDocuments] = useState<any[]>([]);
   const [selectedDocument, setSelectedDocument] = useState<any | null>(null);
   const [error, setError] = useState("");
+  const [warning, setWarning] = useState("");
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(false);
   const [loadingDocuments, setLoadingDocuments] = useState(false);
@@ -87,14 +102,29 @@ function App() {
   const [answer, setAnswer] = useState("");
   const [asking, setAsking] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const sessionRef = useRef<Session | null>(null);
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data }) => setSession(data.session));
+    sessionRef.current = session;
+  }, [session]);
+
+  useEffect(() => {
+    let mounted = true;
+
+    supabase.auth.getSession().then(({ data }) => {
+      if (!mounted) return;
+      setSession(data.session);
+      setAuthReady(true);
+    }).catch(() => {
+      if (!mounted) return;
+      setAuthReady(true);
+    });
 
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((event, nextSession) => {
       setSession(nextSession);
+      setAuthReady(true);
       if (event === "PASSWORD_RECOVERY") {
         setMode("reset");
         setPassword("");
@@ -104,27 +134,45 @@ function App() {
       }
     });
 
-    return () => subscription.unsubscribe();
+    return () => {
+      mounted = false;
+      subscription.unsubscribe();
+    };
   }, []);
 
-  async function refreshDocuments() {
-    if (!session) return;
+  const refreshDocuments = useCallback(async (accessToken?: string) => {
+    const token = accessToken || sessionRef.current?.access_token;
+    if (!token) return;
+
     setLoadingDocuments(true);
     try {
-      const data = await listDocuments(session.access_token);
-      setDocuments(data.documents ?? []);
+      const data = await listDocuments(token);
+      setDocuments(data?.documents ?? []);
       setError("");
+      setWarning("");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Unable to load documents.");
+      const msg = err instanceof Error ? err.message : "Unable to load documents.";
+      // Network / CORS issues on refresh should not feel like a hard crash
+      if (isNetworkError(msg)) {
+        setWarning(msg);
+        setError("");
+      } else {
+        setError(msg);
+        setWarning("");
+      }
     } finally {
       setLoadingDocuments(false);
     }
-  }
+  }, []);
 
   useEffect(() => {
-    if (session && mode !== "reset") refreshDocuments();
-    if (!session) setDocuments([]);
-  }, [session, mode]);
+    if (session && mode !== "reset") {
+      refreshDocuments(session.access_token);
+    }
+    if (!session) {
+      setDocuments([]);
+    }
+  }, [session, mode, refreshDocuments]);
 
   async function handleAuth() {
     setError("");
@@ -237,6 +285,7 @@ function App() {
   async function handleUpload() {
     if (!file || !session) return;
     setError("");
+    setWarning("");
     setMessage("");
     setLoading(true);
     try {
@@ -246,7 +295,7 @@ function App() {
       );
       setFile(null);
       if (fileInputRef.current) fileInputRef.current.value = "";
-      await refreshDocuments();
+      await refreshDocuments(session.access_token);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Upload failed.");
     } finally {
@@ -301,7 +350,7 @@ function App() {
     try {
       await deleteDocument(documentId, session.access_token);
       if (selectedDocument?.id === documentId) setSelectedDocument(null);
-      await refreshDocuments();
+      await refreshDocuments(session.access_token);
       setMessage("Document deleted.");
     } catch (err) {
       setError(
@@ -317,6 +366,7 @@ function App() {
     setSelectedDocument(null);
     setMessage("");
     setError("");
+    setWarning("");
   }
 
   const stats = useMemo(
@@ -328,6 +378,25 @@ function App() {
     }),
     [documents],
   );
+
+  // Avoid flashing the login form while restoring session on page refresh
+  if (!authReady) {
+    return (
+      <Box
+        sx={{
+          minHeight: "100vh",
+          display: "grid",
+          placeItems: "center",
+          bgcolor: "#f4f7fb",
+        }}
+      >
+        <Stack spacing={2} alignItems="center">
+          <CircularProgress />
+          <Typography color="text.secondary">Loading workspace…</Typography>
+        </Stack>
+      </Box>
+    );
+  }
 
   if (!session) {
     return (
@@ -358,6 +427,13 @@ function App() {
                       : "Securely process, classify and store your documents."}
                 </Typography>
               </Box>
+
+              {!isSupabaseConfigured && (
+                <Alert severity="warning">
+                  Supabase is not configured. Set VITE_SUPABASE_URL and
+                  VITE_SUPABASE_PUBLISHABLE_KEY.
+                </Alert>
+              )}
 
               {mode === "reset" ? (
                 <>
@@ -528,6 +604,27 @@ function App() {
               {error}
             </Alert>
           )}
+          {warning && (
+            <Alert
+              severity="warning"
+              onClose={() => setWarning("")}
+              action={
+                <Button
+                  color="inherit"
+                  size="small"
+                  onClick={() => refreshDocuments()}
+                  disabled={loadingDocuments}
+                >
+                  Retry
+                </Button>
+              }
+            >
+              {warning}
+              <Typography variant="caption" display="block" sx={{ mt: 0.5, opacity: 0.8 }}>
+                API: {getApiBaseUrl()}
+              </Typography>
+            </Alert>
+          )}
           {message && (
             <Alert severity="success" onClose={() => setMessage("")}>
               {message}
@@ -682,7 +779,7 @@ function App() {
                   <Tooltip title="Refresh">
                     <span>
                       <IconButton
-                        onClick={refreshDocuments}
+                        onClick={() => refreshDocuments()}
                         disabled={loadingDocuments}
                       >
                         <RefreshOutlinedIcon />
@@ -703,7 +800,9 @@ function App() {
                       No documents yet
                     </Typography>
                     <Typography color="text.secondary">
-                      Upload your first document above.
+                      {warning
+                        ? "Could not load documents. Use Retry above after the API is available."
+                        : "Upload your first document above."}
                     </Typography>
                   </Box>
                 ) : (
