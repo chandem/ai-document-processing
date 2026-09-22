@@ -19,8 +19,12 @@ function networkErrorMessage(err: unknown): string {
   return msg || "Request failed.";
 }
 
+function buildUrl(path: string) {
+  return `${API_BASE_URL.replace(/\/$/, "")}${path.startsWith("/") ? path : `/${path}`}`;
+}
+
 async function apiRequest(path: string, options: RequestInit = {}) {
-  const url = `${API_BASE_URL.replace(/\/$/, "")}${path.startsWith("/") ? path : `/${path}`}`;
+  const url = buildUrl(path);
 
   let response: Response;
   try {
@@ -35,7 +39,8 @@ async function apiRequest(path: string, options: RequestInit = {}) {
       const body = await response.json();
       const detail = body.detail;
       if (typeof detail === "string") message = detail;
-      else if (Array.isArray(detail)) message = detail.map((d) => d.msg || d).join("; ");
+      else if (Array.isArray(detail))
+        message = detail.map((d) => d.msg || d).join("; ");
       else if (detail) message = JSON.stringify(detail);
     } catch {
       // keep generic message
@@ -43,7 +48,6 @@ async function apiRequest(path: string, options: RequestInit = {}) {
     throw new Error(message);
   }
 
-  // 204 No Content
   if (response.status === 204) return null;
 
   return response.json();
@@ -114,6 +118,44 @@ export async function analyzeDocument(file: File) {
     method: "POST",
     body: formData,
   });
+}
+
+/** Trigger a browser download of the document export JSON. */
+export async function exportDocument(
+  documentId: string,
+  accessToken: string,
+  suggestedName = "document-export.json",
+) {
+  const url = buildUrl(`/documents/${documentId}/export`);
+  let response: Response;
+  try {
+    response = await fetch(url, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+  } catch (err) {
+    throw new Error(networkErrorMessage(err));
+  }
+
+  if (!response.ok) {
+    let message = `Export failed (${response.status}).`;
+    try {
+      const body = await response.json();
+      if (body.detail) message = String(body.detail);
+    } catch {
+      // ignore
+    }
+    throw new Error(message);
+  }
+
+  const blob = await response.blob();
+  const objectUrl = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = objectUrl;
+  a.download = suggestedName;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(objectUrl);
 }
 
 export function getApiBaseUrl() {
