@@ -15,6 +15,7 @@
 | Summarization (LLM + extractive fallback) | ✅ |
 | Structured field extraction (OpenAI JSON mode) | ✅ |
 | Question answering over a document | ✅ |
+| JSON export of analysis | ✅ |
 | User auth (Supabase) | ✅ |
 | Persistent storage + document list/detail/delete | ✅ |
 | React workspace UI | ✅ |
@@ -41,23 +42,10 @@
 ```
 ai-document-processing/
 ├── backend/                 # FastAPI application
-│   ├── app/
-│   │   ├── ai/              # OpenAI provider + interfaces
-│   │   ├── api/             # Auth + documents routes
-│   │   ├── core/            # Settings, Supabase client
-│   │   ├── schemas/
-│   │   └── services/        # OCR, extraction, intelligence
-│   ├── tests/
-│   ├── requirements.txt
-│   └── Dockerfile
 ├── frontend/                # React + TypeScript + Vite + MUI
-│   ├── src/
-│   │   ├── App.tsx
-│   │   └── services/        # API + Supabase clients
-│   └── package.json
-├── docs/                    # Architecture, roadmap, data model
+├── docs/                    # Architecture, API, roadmap, troubleshooting
 ├── supabase/                # SQL schema
-├── src/                     # Original standalone Python package (CLI/pipeline)
+├── src/                     # Standalone Python package (CLI/pipeline)
 └── examples/
 ```
 
@@ -71,21 +59,17 @@ python -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
 
-# System packages for OCR (Ubuntu/Debian)
+# OCR system packages (Ubuntu/Debian)
 # sudo apt-get install -y tesseract-ocr poppler-utils
 
 cp .env.example .env
-# Fill in:
-#   OPENAI_API_KEY=sk-...
-#   SUPABASE_URL=...
-#   SUPABASE_SERVICE_ROLE_KEY=...
-#   SUPABASE_PUBLISHABLE_KEY=...
-#   FRONTEND_URL=http://localhost:5173
+# OPENAI_API_KEY, SUPABASE_*, FRONTEND_URL
 
-uvicorn app.main:app --reload --port 8000
+uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
-API docs: http://localhost:8000/docs
+- Health: http://127.0.0.1:8000/health  
+- API docs: http://127.0.0.1:8000/docs  
 
 ### 2. Frontend
 
@@ -93,18 +77,20 @@ API docs: http://localhost:8000/docs
 cd frontend
 npm install
 cp .env.example .env
+# VITE_API_BASE_URL=/api/v1
 # VITE_SUPABASE_URL=...
-# VITE_SUPABASE_ANON_KEY=...
-# VITE_API_URL=http://localhost:8000
+# VITE_SUPABASE_PUBLISHABLE_KEY=...
 
 npm run dev
 ```
 
-Open http://localhost:5173
+Open http://localhost:5173  
+(`VITE_API_BASE_URL=/api/v1` uses the Vite proxy → no CORS issues in local dev.)
 
 ### 3. Supabase
 
-Apply `supabase/schema.sql` in the SQL editor of your project. Create a private Storage bucket named `documents`.
+1. Apply [`supabase/schema.sql`](supabase/schema.sql) in the SQL editor.  
+2. Create a **private** Storage bucket named `documents`.
 
 ## API overview
 
@@ -113,11 +99,14 @@ Apply `supabase/schema.sql` in the SQL editor of your project. Create a private 
 | `POST` | `/api/v1/documents/upload` | No | Extract text only |
 | `POST` | `/api/v1/documents/analyze` | No | Classify + summarize |
 | `POST` | `/api/v1/documents/ask` | No | Upload + ask a question |
-| `POST` | `/api/v1/documents/persist` | Yes | Store file + run full analysis |
-| `GET`  | `/api/v1/documents` | Yes | List user documents |
+| `POST` | `/api/v1/documents/persist` | Yes | Store file + full analysis |
+| `GET`  | `/api/v1/documents` | Yes | List documents |
 | `GET`  | `/api/v1/documents/{id}` | Yes | Document detail |
+| `GET`  | `/api/v1/documents/{id}/export` | Yes | Download analysis JSON |
 | `POST` | `/api/v1/documents/{id}/ask` | Yes | Q&A on stored document |
-| `DELETE` | `/api/v1/documents/{id}` | Yes | Delete document + storage object |
+| `DELETE` | `/api/v1/documents/{id}` | Yes | Delete document + file |
+
+Full reference: [docs/api.md](docs/api.md)
 
 ## Environment variables
 
@@ -137,12 +126,12 @@ FRONTEND_URL=http://localhost:5173
 **Frontend** (`frontend/.env`):
 
 ```env
+VITE_API_BASE_URL=/api/v1
 VITE_SUPABASE_URL=https://xxxx.supabase.co
-VITE_SUPABASE_ANON_KEY=eyJ...
-VITE_API_URL=http://localhost:8000
+VITE_SUPABASE_PUBLISHABLE_KEY=eyJ...
 ```
 
-Without `OPENAI_API_KEY` the system falls back to keyword classification and extractive summaries. OCR works as long as Tesseract + Poppler are installed.
+Without `OPENAI_API_KEY`, classification and summary fall back to heuristics. OCR needs Tesseract + Poppler (or the Docker image).
 
 ## Docker (backend)
 
@@ -152,26 +141,17 @@ docker build -t ai-doc-backend .
 docker run -p 8000:8000 --env-file .env ai-doc-backend
 ```
 
-The image installs Tesseract and Poppler so OCR works out of the box.
+## Troubleshooting
 
-## Standalone Python package
+See **[docs/troubleshooting.md](docs/troubleshooting.md)** for “Failed to fetch”, CORS, OCR, and auth issues.
 
-The original `src/ai_document_processing` package (CLI + pipeline) remains available for offline / batch use:
+## Docs
 
-```bash
-pip install -e .
-python -m src.ai_document_processing.cli process invoice.pdf -o result.json
-```
-
-## Roadmap
-
-See [docs/roadmap.md](docs/roadmap.md) for detailed phase progress.
-
-Next priorities:
-- Richer document detail view + in-app Q&A UI
-- Conversation history & citations
-- Usage limits / billing
-- Export to CSV / Excel / JSON
+- [Architecture](docs/architecture.md)
+- [API](docs/api.md)
+- [Processing pipeline](docs/processing.md)
+- [Data model](docs/data-model.md)
+- [Roadmap](docs/roadmap.md)
 
 ## License
 
