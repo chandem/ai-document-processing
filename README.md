@@ -1,148 +1,178 @@
 # AI Document Processing
 
-**Intelligent document understanding pipeline** powered by modern LLMs and computer vision.
+**Full-stack intelligent document workspace** — upload PDFs, DOCX, images or text files, extract content (with OCR for scans), classify, summarize, pull structured data, and ask questions — all backed by Supabase Auth + Storage and optional OpenAI.
 
-Extract text, classify documents, pull structured data, summarize content, and turn messy PDFs/images into clean, actionable information.
+[![Backend CI](https://github.com/chandem/ai-document-processing/actions/workflows/backend.yml/badge.svg)](https://github.com/chandem/ai-document-processing/actions/workflows/backend.yml)
+[![Frontend CI](https://github.com/chandem/ai-document-processing/actions/workflows/frontend.yml/badge.svg)](https://github.com/chandem/ai-document-processing/actions/workflows/frontend.yml)
 
 ## Features
 
-- **OCR & Text Extraction** – High-quality text from scanned PDFs and images (Tesseract + optional cloud OCR)
-- **Document Classification** – Automatically categorize invoices, contracts, receipts, forms, reports, etc.
-- **Structured Data Extraction** – Pull key-value pairs, tables, entities using LLMs with JSON schema enforcement
-- **Summarization** – Concise or detailed summaries with controllable length and focus
-- **Multi-format Support** – PDF, PNG, JPG, TIFF, DOCX
-- **Pipeline Orchestration** – Chain processing steps with configurable workflows
-- **REST API** – FastAPI endpoints for easy integration
-- **CLI** – Command-line interface for batch processing
+| Capability | Status |
+|---|---|
+| PDF / DOCX / TXT / MD / CSV / JSON extraction | ✅ |
+| Scanned PDF & image OCR (Tesseract) | ✅ |
+| Document classification (LLM + heuristic fallback) | ✅ |
+| Summarization (LLM + extractive fallback) | ✅ |
+| Structured field extraction (OpenAI JSON mode) | ✅ |
+| Question answering over a document | ✅ |
+| User auth (Supabase) | ✅ |
+| Persistent storage + document list/detail/delete | ✅ |
+| React workspace UI | ✅ |
+| FastAPI REST API | ✅ |
 
-## Quick Start
+## Architecture
 
-### 1. Clone & Install
-
-```bash
-git clone https://github.com/chandem/ai-document-processing.git
-cd ai-document-processing
-python -m venv .venv
-source .venv/bin/activate   # Windows: .venv\Scripts\activate
-pip install -r requirements.txt
+```
+┌──────────────┐     ┌─────────────────┐     ┌──────────────────┐
+│  React + MUI │────▶│  FastAPI backend│────▶│ Supabase         │
+│  (Vite/TS)   │     │  (Python 3.12)  │     │ Auth + Storage + │
+│  Vercel      │     │  Render         │     │ Postgres         │
+└──────────────┘     └────────┬────────┘     └──────────────────┘
+                              │
+                              ▼
+                     ┌─────────────────┐
+                     │ OCR (Tesseract) │
+                     │ LLM (OpenAI)    │
+                     └─────────────────┘
 ```
 
-### 2. Environment Variables
-
-Create a `.env` file:
-
-```env
-OPENAI_API_KEY=sk-...
-# or
-ANTHROPIC_API_KEY=sk-ant-...
-# Optional: for higher quality OCR
-GOOGLE_APPLICATION_CREDENTIALS=/path/to/service-account.json
-```
-
-### 3. Run the CLI
-
-```bash
-# Process a single document
-python -m src.ai_document_processing.cli process path/to/invoice.pdf --output results.json
-
-# Classify only
-python -m src.ai_document_processing.cli classify path/to/document.pdf
-
-# Extract structured data with a schema
-python -m src.ai_document_processing.cli extract path/to/invoice.pdf --schema invoice_schema.json
-```
-
-### 4. Start the API
-
-```bash
-uvicorn src.ai_document_processing.api:app --reload --host 0.0.0.0 --port 8000
-```
-
-Docs available at `http://localhost:8000/docs`
-
-## Project Structure
+## Project layout
 
 ```
 ai-document-processing/
-├── src/
-│   └── ai_document_processing/
-│       ├── __init__.py
-│       ├── ocr.py              # OCR engines
-│       ├── classifier.py       # Document type classification
-│       ├── extractor.py        # Structured data extraction
-│       ├── summarizer.py       # Summarization
-│       ├── pipeline.py         # End-to-end orchestration
-│       ├── schemas.py          # Pydantic models & example schemas
-│       ├── utils.py            # Helpers (file loading, chunking, etc.)
-│       ├── cli.py              # Command-line interface
-│       └── api.py              # FastAPI application
-├── examples/
-│   ├── sample_invoice.pdf
-│   ├── invoice_schema.json
-│   └── run_pipeline.py
-├── tests/
-├── Dockerfile
-├── requirements.txt
-├── pyproject.toml
-└── README.md
+├── backend/                 # FastAPI application
+│   ├── app/
+│   │   ├── ai/              # OpenAI provider + interfaces
+│   │   ├── api/             # Auth + documents routes
+│   │   ├── core/            # Settings, Supabase client
+│   │   ├── schemas/
+│   │   └── services/        # OCR, extraction, intelligence
+│   ├── tests/
+│   ├── requirements.txt
+│   └── Dockerfile
+├── frontend/                # React + TypeScript + Vite + MUI
+│   ├── src/
+│   │   ├── App.tsx
+│   │   └── services/        # API + Supabase clients
+│   └── package.json
+├── docs/                    # Architecture, roadmap, data model
+├── supabase/                # SQL schema
+├── src/                     # Original standalone Python package (CLI/pipeline)
+└── examples/
 ```
 
-## Architecture Overview
+## Quick start
 
+### 1. Backend
+
+```bash
+cd backend
+python -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+
+# System packages for OCR (Ubuntu/Debian)
+# sudo apt-get install -y tesseract-ocr poppler-utils
+
+cp .env.example .env
+# Fill in:
+#   OPENAI_API_KEY=sk-...
+#   SUPABASE_URL=...
+#   SUPABASE_SERVICE_ROLE_KEY=...
+#   SUPABASE_PUBLISHABLE_KEY=...
+#   FRONTEND_URL=http://localhost:5173
+
+uvicorn app.main:app --reload --port 8000
 ```
-┌─────────────┐     ┌──────────────┐     ┌─────────────────┐
-│  Input File │────▶│  Preprocess  │────▶│  OCR / Text Ext │
-│ (PDF/Image) │     │  (convert,   │     │                 │
-└─────────────┘     │   clean)     │     └────────┬────────┘
-                    └──────────────┘              │
-                                                  ▼
-┌─────────────┐     ┌──────────────┐     ┌─────────────────┐
-│  Structured │◀────│  LLM Extract │◀────│  Classifier     │
-│  JSON / CSV │     │  + Schema    │     │  (doc type)     │
-└─────────────┘     └──────────────┘     └─────────────────┘
-                                                  │
-                                                  ▼
-                                         ┌─────────────────┐
-                                         │  Summarizer     │
-                                         └─────────────────┘
+
+API docs: http://localhost:8000/docs
+
+### 2. Frontend
+
+```bash
+cd frontend
+npm install
+cp .env.example .env
+# VITE_SUPABASE_URL=...
+# VITE_SUPABASE_ANON_KEY=...
+# VITE_API_URL=http://localhost:8000
+
+npm run dev
 ```
 
-## Supported Providers
+Open http://localhost:5173
 
-| Component       | Options                          |
-|-----------------|----------------------------------|
-| LLM             | OpenAI (GPT-4o, o1), Anthropic (Claude 3.5/4), local (Ollama) |
-| OCR             | Tesseract, Google Vision, Azure Document Intelligence |
-| Embeddings      | OpenAI, HuggingFace              |
+### 3. Supabase
 
-## Example: Extract Invoice Data
+Apply `supabase/schema.sql` in the SQL editor of your project. Create a private Storage bucket named `documents`.
 
-```python
-from ai_document_processing.pipeline import DocumentPipeline
-from ai_document_processing.schemas import InvoiceSchema
+## API overview
 
-pipeline = DocumentPipeline(llm_provider="openai")
-result = pipeline.process(
-    "invoice.pdf",
-    steps=["ocr", "classify", "extract"],
-    schema=InvoiceSchema
-)
-print(result.extracted_data)
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| `POST` | `/api/v1/documents/upload` | No | Extract text only |
+| `POST` | `/api/v1/documents/analyze` | No | Classify + summarize |
+| `POST` | `/api/v1/documents/ask` | No | Upload + ask a question |
+| `POST` | `/api/v1/documents/persist` | Yes | Store file + run full analysis |
+| `GET`  | `/api/v1/documents` | Yes | List user documents |
+| `GET`  | `/api/v1/documents/{id}` | Yes | Document detail |
+| `POST` | `/api/v1/documents/{id}/ask` | Yes | Q&A on stored document |
+| `DELETE` | `/api/v1/documents/{id}` | Yes | Delete document + storage object |
+
+## Environment variables
+
+**Backend** (`backend/.env`):
+
+```env
+APP_ENV=development
+PORT=8000
+MAX_UPLOAD_SIZE_MB=20
+OPENAI_API_KEY=sk-...
+SUPABASE_URL=https://xxxx.supabase.co
+SUPABASE_PUBLISHABLE_KEY=eyJ...
+SUPABASE_SERVICE_ROLE_KEY=eyJ...
+FRONTEND_URL=http://localhost:5173
+```
+
+**Frontend** (`frontend/.env`):
+
+```env
+VITE_SUPABASE_URL=https://xxxx.supabase.co
+VITE_SUPABASE_ANON_KEY=eyJ...
+VITE_API_URL=http://localhost:8000
+```
+
+Without `OPENAI_API_KEY` the system falls back to keyword classification and extractive summaries. OCR works as long as Tesseract + Poppler are installed.
+
+## Docker (backend)
+
+```bash
+cd backend
+docker build -t ai-doc-backend .
+docker run -p 8000:8000 --env-file .env ai-doc-backend
+```
+
+The image installs Tesseract and Poppler so OCR works out of the box.
+
+## Standalone Python package
+
+The original `src/ai_document_processing` package (CLI + pipeline) remains available for offline / batch use:
+
+```bash
+pip install -e .
+python -m src.ai_document_processing.cli process invoice.pdf -o result.json
 ```
 
 ## Roadmap
 
-- [ ] Multi-page table extraction with layout awareness
-- [ ] Human-in-the-loop review UI
-- [ ] Vector store integration for RAG over document collections
-- [ ] Batch processing with progress tracking
-- [ ] Support for more document types (medical, legal, financial statements)
-- [ ] Evaluation suite with ground-truth datasets
+See [docs/roadmap.md](docs/roadmap.md) for detailed phase progress.
 
-## Contributing
-
-Pull requests are welcome! Please open an issue first to discuss major changes.
+Next priorities:
+- Richer document detail view + in-app Q&A UI
+- Conversation history & citations
+- Usage limits / billing
+- Export to CSV / Excel / JSON
 
 ## License
 
-MIT License – see [LICENSE](LICENSE)
+MIT — see [LICENSE](LICENSE)
