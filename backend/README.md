@@ -1,6 +1,6 @@
-# Backend
+# AI Document Processing Backend
 
-FastAPI backend for AI Document Processing.
+FastAPI backend for the AI Document Processing SaaS.
 
 ## Local development
 
@@ -12,4 +12,16 @@ pip install -r requirements.txt
 uvicorn app.main:app --reload
 ```
 
-API documentation is available at /docs.
+Health check:
+
+```
+GET /health
+```
+
+Document processing:
+
+```
+POST /api/v1/documents/upload
+```
+
+The MVP extracts text from PDF, DOCX and common text files. OCR, LLM processing and persistent storage are the next layers.
