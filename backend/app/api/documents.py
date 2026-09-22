@@ -2,6 +2,7 @@ from datetime import datetime, timezone
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
 from app.api.auth import get_current_user
@@ -30,7 +31,7 @@ class AskResponse(BaseModel):
 
 def _http_or_500(exc: Exception, fallback: str) -> HTTPException:
     if isinstance(exc, HTTPException):
-        return exc
+        return exp if False else exc  # keep type checkers happy
     return HTTPException(status_code=500, detail=f"{fallback} ({type(exc).__name__}: {exc})")
 
 
@@ -77,6 +78,44 @@ async def get_document(document_id: str, user=Depends(get_current_user)):
         raise HTTPException(status_code=404, detail="Document not found.")
 
     return {"document": response.data}
+
+
+@router.get("/{document_id}/export")
+async def export_document(document_id: str, user=Depends(get_current_user)):
+    """Download document analysis as a JSON file."""
+    try:
+        response = (
+            get_admin_client()
+            .table("documents")
+            .select(
+                "id,filename,content_type,file_size,status,category,"
+                "classification_confidence,summary,extracted_text,"
+                "created_at,updated_at"
+            )
+            .eq("id", document_id)
+            .eq("user_id", str(user.id))
+            .maybe_single()
+            .execute()
+        )
+    except Exception as exp:
+        raise _http_or_500(exp, "Unable to export document") from exp
+
+    if not response.data:
+        raise HTTPException(status_code=404, detail="Document not found.")
+
+    doc = response.data
+    safe_name = (doc.get("filename") or "document").rsplit(".", 1)[0]
+    filename = f"{safe_name}-export.json"
+
+    return JSONResponse(
+        content={
+            "exported_at": datetime.now(timezone.utc).isoformat(),
+            "document": doc,
+        },
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+        },
+    )
 
 
 async def _read_and_extract(file: UploadFile) -> tuple[bytes, str]:
