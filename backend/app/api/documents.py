@@ -31,8 +31,11 @@ class AskResponse(BaseModel):
 
 def _http_or_500(exc: Exception, fallback: str) -> HTTPException:
     if isinstance(exc, HTTPException):
-        return exp if False else exc  # keep type checkers happy
-    return HTTPException(status_code=500, detail=f"{fallback} ({type(exc).__name__}: {exc})")
+        return exc
+    return HTTPException(
+        status_code=500,
+        detail=f"{fallback} ({type(exc).__name__}: {exc})",
+    )
 
 
 @router.get("")
