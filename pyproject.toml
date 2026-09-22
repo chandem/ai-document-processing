@@ -1,0 +1,75 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ai-document-processing"
+version = "0.1.0"
+description = "AI-powered document processing pipeline: OCR, classification, structured extraction, and summarization"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [
+    { name = "Chane Eshetu", email = "chandem@users.noreply.github.com" }
+]
+keywords = ["ai", "document", "ocr", "llm", "extraction", "nlp", "fastapi"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+dependencies = [
+    "pydantic>=2.5.0",
+    "pydantic-settings>=2.1.0",
+    "python-dotenv>=1.0.0",
+    "typer>=0.9.0",
+    "rich>=13.7.0",
+    "pypdf>=4.0.0",
+    "pdf2image>=1.17.0",
+    "Pillow>=10.2.0",
+    "pytesseract>=0.3.10",
+    "openai>=1.12.0",
+    "fastapi>=0.109.0",
+    "uvicorn[standard]>=0.27.0",
+    "python-multipart>=0.0.6",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.23.0",
+    "httpx>=0.26.0",
+    "ruff>=0.2.0",
+    "mypy>=1.8.0",
+]
+anthropic = ["anthropic>=0.18.0"]
+langchain = [
+    "langchain>=0.1.0",
+    "langchain-openai>=0.0.5",
+    "langchain-anthropic>=0.1.0",
+]
+
+[project.scripts]
+ai-doc = "ai_document_processing.cli:app"
+
+[project.urls]
+Homepage = "https://github.com/chandem/ai-document-processing"
+Repository = "https://github.com/chandem/ai-document-processing"
+Issues = "https://github.com/chandem/ai-document-processing/issues"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.mypy]
+python_version = "3.10"
+strict = false
+ignore_missing_imports = true
