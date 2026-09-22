@@ -28,6 +28,12 @@ class AskResponse(BaseModel):
     answer: str
 
 
+def _http_or_500(exc: Exception, fallback: str) -> HTTPException:
+    if isinstance(exc, HTTPException):
+        return exc
+    return HTTPException(status_code=500, detail=f"{fallback} ({type(exc).__name__}: {exc})")
+
+
 @router.get("")
 async def list_documents(user=Depends(get_current_user)):
     try:
@@ -43,7 +49,7 @@ async def list_documents(user=Depends(get_current_user)):
             .execute()
         )
     except Exception as exc:
-        raise HTTPException(status_code=500, detail="Unable to load documents.") from exc
+        raise _http_or_500(exc, "Unable to load documents") from exc
 
     return {"documents": response.data or []}
 
@@ -64,8 +70,8 @@ async def get_document(document_id: str, user=Depends(get_current_user)):
             .maybe_single()
             .execute()
         )
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail="Unable to load document.") from exc
+    except Exception as exp:
+        raise _http_or_500(exp, "Unable to load document") from exp
 
     if not response.data:
         raise HTTPException(status_code=404, detail="Document not found.")
@@ -153,8 +159,8 @@ async def ask_about_document(
             .maybe_single()
             .execute()
         )
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail="Unable to load document.") from exc
+    except Exception as exp:
+        raise _http_or_500(exp, "Unable to load document") from exp
 
     if not response.data:
         raise HTTPException(status_code=404, detail="Document not found.")
@@ -176,7 +182,11 @@ async def persist_document(
     user=Depends(get_current_user),
 ):
     data, text = await _read_and_extract(file)
-    client = get_admin_client()
+
+    try:
+        client = get_admin_client()
+    except HTTPException:
+        raise
 
     document_id = str(uuid4())
     safe_name = (file.filename or "document").replace("/", "_").replace("\\", "_")
@@ -215,29 +225,44 @@ async def persist_document(
             .execute()
         )
 
-        return {
-            "document": response.data[0] if response.data else {
+        doc = (
+            response.data[0]
+            if response.data
+            else {
                 "id": document_id,
                 "filename": safe_name,
                 "status": "completed",
                 "word_count": words,
                 "character_count": characters,
+                "category": analysis.get("category"),
+                "summary": analysis.get("summary"),
             }
-        }
-    except Exception as exc:
+        )
+        if analysis.get("structured_data"):
+            doc["structured_data"] = analysis["structured_data"]
+        if analysis.get("source"):
+            doc["analysis_source"] = analysis["source"]
+
+        return {"document": doc}
+    except HTTPException:
+        raise
+    except Exception as exp:
         try:
             client.storage.from_("documents").remove([storage_path])
         except Exception:
             pass
         raise HTTPException(
             status_code=500,
-            detail="Document could not be stored and processed.",
-        ) from exc
+            detail=f"Document could not be stored and processed. ({type(exp).__name__}: {exp})",
+        ) from exp
 
 
 @router.delete("/{document_id}")
 async def delete_document(document_id: str, user=Depends(get_current_user)):
-    client = get_admin_client()
+    try:
+        client = get_admin_client()
+    except HTTPException:
+        raise
 
     try:
         response = (
@@ -262,5 +287,5 @@ async def delete_document(document_id: str, user=Depends(get_current_user)):
         return {"deleted": True, "id": document_id}
     except HTTPException:
         raise
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail="Unable to delete document.") from exc
+    except Exception as exp:
+        raise _http_or_500(exp, "Unable to delete document") from exp
