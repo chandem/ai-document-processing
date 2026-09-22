@@ -1,30 +1,41 @@
 # Document Processing
 
-## Current MVP pipeline
+## Pipeline
 
 1. Receive a multipart upload.
-2. Enforce a configurable size limit.
-3. Detect the document format from extension/content type.
-4. Extract text from PDF, DOCX and common text formats.
-5. Return normalized text plus basic statistics.
-6. Keep OCR and LLM processing behind provider interfaces so they can be added without changing the API contract.
+2. Enforce a configurable size limit (`MAX_UPLOAD_SIZE_MB`).
+3. Detect format from extension / content type.
+4. Extract text:
+   - **Digital PDF** → PyMuPDF
+   - **Scanned PDF / images** → Tesseract OCR (via pdf2image for multi-page)
+   - **DOCX** → python-docx
+   - **TXT / MD / CSV / JSON** → UTF-8 decode
+5. Run intelligence layer:
+   - **Classification** — OpenAI when `OPENAI_API_KEY` is set, otherwise keyword heuristics
+   - **Summarization** — OpenAI or extractive first-sentences fallback
+   - **Structured extraction** — OpenAI JSON mode (when configured)
+6. Optionally persist file to Supabase Storage and metadata to Postgres.
+7. Optional Q&A against the extracted text.
 
-## Supported now
+## Supported formats
 
-- PDF with selectable text
-- DOCX
-- TXT
-- Markdown
-- CSV
-- JSON
+| Format | Digital text | OCR |
+|--------|--------------|-----|
+| PDF | ✅ | ✅ (when little digital text) |
+| DOCX | ✅ | — |
+| PNG / JPG / TIFF / WEBP / BMP | — | ✅ |
+| TXT / MD / CSV / JSON | ✅ | — |
 
-## Next processing layers
+## Provider behaviour
 
-- OCR for scanned PDFs and images
-- Document classification
-- Summarization
-- Structured field extraction
-- Persistent document metadata and file storage
-- Q&A with source references
+- **No `OPENAI_API_KEY`** → heuristic classification + extractive summary. Q&A returns a clear configuration message.
+- **OCR missing** (no Tesseract / Pillow) → scanned PDFs and images return a 422 explaining how to enable OCR.
+- **Docker image** installs `tesseract-ocr` and `poppler-utils` so OCR works out of the box.
 
-Image OCR intentionally returns a clear 422 response until an OCR provider is configured. This avoids silently producing empty or misleading text.
+## API entry points
+
+- `POST /api/v1/documents/upload` — extract text only
+- `POST /api/v1/documents/analyze` — classify + summarize
+- `POST /api/v1/documents/ask` — upload + question
+- `POST /api/v1/documents/persist` — store + full analysis (auth required)
+- `POST /api/v1/documents/{id}/ask` — Q&A on a stored document
