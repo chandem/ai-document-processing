@@ -18,3 +18,11 @@ class DocumentProcessResponse(BaseModel):
     character_count: int
     word_count: int
     created_at: datetime
+
+
+class DocumentAnalysisResponse(BaseModel):
+    filename: str
+    status: str
+    category: str
+    confidence: float
+    summary: str
