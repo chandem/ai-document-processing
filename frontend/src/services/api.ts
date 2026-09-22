@@ -1,21 +1,50 @@
 const API_BASE_URL =
   import.meta.env.VITE_API_BASE_URL ||
   import.meta.env.VITE_API_URL ||
-  "http://localhost:8000/api/v1";
+  "/api/v1"; // relative path works with Vite proxy in dev and same-origin deploys
+
+function networkErrorMessage(err: unknown): string {
+  const msg = err instanceof Error ? err.message : String(err);
+  if (
+    msg === "Failed to fetch" ||
+    msg.includes("NetworkError") ||
+    msg.includes("Load failed") ||
+    msg.includes("Network request failed")
+  ) {
+    return (
+      "Cannot reach the API. Check that the backend is running and " +
+      "VITE_API_BASE_URL points to it (and CORS allows this origin)."
+    );
+  }
+  return msg || "Request failed.";
+}
 
 async function apiRequest(path: string, options: RequestInit = {}) {
-  const response = await fetch(`${API_BASE_URL}${path}`, options);
+  const url = `${API_BASE_URL.replace(/\/$/, "")}${path.startsWith("/") ? path : `/${path}`}`;
+
+  let response: Response;
+  try {
+    response = await fetch(url, options);
+  } catch (err) {
+    throw new Error(networkErrorMessage(err));
+  }
 
   if (!response.ok) {
-    let message = "Request failed.";
+    let message = `Request failed (${response.status}).`;
     try {
       const body = await response.json();
-      message = body.detail || message;
+      const detail = body.detail;
+      if (typeof detail === "string") message = detail;
+      else if (Array.isArray(detail)) message = detail.map((d) => d.msg || d).join("; ");
+      else if (detail) message = JSON.stringify(detail);
     } catch {
-      // Keep the generic message when the response is not JSON.
+      // keep generic message
     }
-    throw new Error(typeof message === "string" ? message : JSON.stringify(message));
+    throw new Error(message);
   }
+
+  // 204 No Content
+  if (response.status === 204) return null;
 
   return response.json();
 }
@@ -85,4 +114,8 @@ export async function analyzeDocument(file: File) {
     method: "POST",
     body: formData,
   });
+}
+
+export function getApiBaseUrl() {
+  return API_BASE_URL;
 }
