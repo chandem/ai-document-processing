@@ -27,7 +27,7 @@ DEFAULT_SCHEMAS: dict[DocumentType, Type[BaseModel]] = {
 class DocumentPipeline:
     """Orchestrates OCR → Classification → Extraction → Summarization."""
 
-    def __init(
+    def __init__(
         self,
         llm_provider: str = "openai",
         ocr_lang: str = "eng",
