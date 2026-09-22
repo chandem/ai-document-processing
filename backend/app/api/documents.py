@@ -37,6 +37,31 @@ async def list_documents(user=Depends(get_current_user)):
     return {"documents": response.data or []}
 
 
+@router.get("/{document_id}")
+async def get_document(document_id: str, user=Depends(get_current_user)):
+    try:
+        response = (
+            get_admin_client()
+            .table("documents")
+            .select(
+                "id,filename,content_type,file_size,status,category,"
+                "classification_confidence,summary,extracted_text,storage_path,"
+                "created_at,updated_at"
+            )
+            .eq("id", document_id)
+            .eq("user_id", str(user.id))
+            .maybe_single()
+            .execute()
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail="Unable to load document.") from exc
+
+    if not response.data:
+        raise HTTPException(status_code=404, detail="Document not found.")
+
+    return {"document": response.data}
+
+
 async def _read_and_extract(file: UploadFile) -> tuple[bytes, str]:
     if not file.filename:
         raise HTTPException(status_code=400, detail="A filename is required.")
@@ -152,3 +177,34 @@ async def persist_document(
             status_code=500,
             detail="Document could not be stored and processed.",
         ) from exc
+
+
+@router.delete("/{document_id}")
+async def delete_document(document_id: str, user=Depends(get_current_user)):
+    client = get_admin_client()
+
+    try:
+        response = (
+            client.table("documents")
+            .select("id,storage_path")
+            .eq("id", document_id)
+            .eq("user_id", str(user.id))
+            .maybe_single()
+            .execute()
+        )
+        if not response.data:
+            raise HTTPException(status_code=404, detail="Document not found.")
+
+        storage_path = response.data.get("storage_path")
+        if storage_path:
+            client.storage.from_("documents").remove([storage_path])
+
+        client.table("documents").delete().eq("id", document_id).eq(
+            "user_id", str(user.id)
+        ).execute()
+
+        return {"deleted": True, "id": document_id}
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail="Unable to delete document.") from exc
