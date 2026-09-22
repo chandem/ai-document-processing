@@ -25,7 +25,8 @@ function App() {
   const [session, setSession] = useState<Session | null>(null);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [mode, setMode] = useState<"signin" | "signup">("signin");
+  const [newPassword, setNewPassword] = useState("");
+  const [mode, setMode] = useState<"signin" | "signup" | "forgot" | "reset">("signin");
   const [file, setFile] = useState<File | null>(null);
   const [documents, setDocuments] = useState<any[]>([]);
   const [result, setResult] = useState<any>(null);
@@ -38,23 +39,30 @@ function App() {
 
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, nextSession) => {
+    } = supabase.auth.onAuthStateChange((event, nextSession) => {
       setSession(nextSession);
+      if (event === "PASSWORD_RECOVERY") {
+        setMode("reset");
+        setPassword("");
+        setNewPassword("");
+        setError("");
+        setMessage("");
+      }
     });
 
     return () => subscription.unsubscribe();
   }, []);
 
   useEffect(() => {
-    if (!session) {
-      setDocuments([]);
+    if (!session || mode === "reset") {
+      if (!session) setDocuments([]);
       return;
     }
 
     listDocuments(session.access_token)
       .then((data) => setDocuments(data.documents ?? []))
       .catch((err) => setError(err instanceof Error ? err.message : "Unable to load documents."));
-  }, [session]);
+  }, [session, mode]);
 
   async function handleAuth() {
     setError("");
@@ -80,6 +88,53 @@ function App() {
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Authentication failed.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleForgotPassword() {
+    setError("");
+    setMessage("");
+    setLoading(true);
+
+    try {
+      const redirectTo = window.location.origin;
+      const { error: resetError } = await supabase.auth.resetPasswordForEmail(email, {
+        redirectTo,
+      });
+      if (resetError) throw resetError;
+      setMessage("If an account exists for this email, a password reset link has been sent. Check your inbox.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to send the password reset email.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleUpdatePassword() {
+    setError("");
+    setMessage("");
+
+    if (newPassword.length < 6) {
+      setError("Password must be at least 6 characters.");
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const { error: updateError } = await supabase.auth.updateUser({
+        password: newPassword,
+      });
+      if (updateError) throw updateError;
+
+      setMessage("Password updated successfully. You can now sign in with your new password.");
+      await supabase.auth.signOut();
+      setMode("signin");
+      setPassword("");
+      setNewPassword("");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to update the password.");
     } finally {
       setLoading(false);
     }
@@ -122,23 +177,87 @@ function App() {
                   AI Document Processing
                 </Typography>
                 <Typography color="text.secondary" sx={{ mt: 1 }}>
-                  Sign in to securely process and store your documents.
+                  {mode === "reset"
+                    ? "Choose a new password for your account."
+                    : mode === "forgot"
+                      ? "Enter your email and we’ll send you a password reset link."
+                      : "Sign in to securely process and store your documents."}
                 </Typography>
               </Box>
 
-              <TextField label="Email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} fullWidth />
-              <TextField label="Password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} fullWidth />
+              {mode === "reset" ? (
+                <>
+                  <TextField
+                    label="New password"
+                    type="password"
+                    value={newPassword}
+                    onChange={(e) => setNewPassword(e.target.value)}
+                    fullWidth
+                  />
+                  {error && <Alert severity="error">{error}</Alert>}
+                  {message && <Alert severity="success">{message}</Alert>}
+                  <Button
+                    variant="contained"
+                    size="large"
+                    onClick={handleUpdatePassword}
+                    disabled={loading || !newPassword}
+                  >
+                    {loading ? "Updating…" : "Update password"}
+                  </Button>
+                </>
+              ) : mode === "forgot" ? (
+                <>
+                  <TextField
+                    label="Email"
+                    type="email"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    fullWidth
+                  />
+                  {error && <Alert severity="error">{error}</Alert>}
+                  {message && <Alert severity="success">{message}</Alert>}
+                  <Button
+                    variant="contained"
+                    size="large"
+                    onClick={handleForgotPassword}
+                    disabled={loading || !email}
+                  >
+                    {loading ? "Sending…" : "Send reset link"}
+                  </Button>
+                  <Button
+                    variant="text"
+                    onClick={() => {
+                      setMode("signin");
+                      setError("");
+                      setMessage("");
+                    }}
+                  >
+                    Back to sign in
+                  </Button>
+                </>
+              ) : (
+                <>
+                  <TextField label="Email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} fullWidth />
+                  <TextField label="Password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} fullWidth />
 
-              {error && <Alert severity="error">{error}</Alert>}
-              {message && <Alert severity="success">{message}</Alert>}
+                  {error && <Alert severity="error">{error}</Alert>}
+                  {message && <Alert severity="success">{message}</Alert>}
 
-              <Button variant="contained" size="large" onClick={handleAuth} disabled={loading || !email || !password}>
-                {loading ? "Please wait…" : mode === "signin" ? "Sign in" : "Create account"}
-              </Button>
+                  <Button variant="contained" size="large" onClick={handleAuth} disabled={loading || !email || !password}>
+                    {loading ? "Please wait…" : mode === "signin" ? "Sign in" : "Create account"}
+                  </Button>
 
-              <Button variant="text" onClick={() => setMode(mode === "signin" ? "signup" : "signin")}>
-                {mode === "signin" ? "Create a new account" : "Already have an account? Sign in"}
-              </Button>
+                  {mode === "signin" && (
+                    <Button variant="text" onClick={() => { setMode("forgot"); setError(""); setMessage(""); }}>
+                      Forgot password?
+                    </Button>
+                  )}
+
+                  <Button variant="text" onClick={() => setMode(mode === "signin" ? "signup" : "signin")}>
+                    {mode === "signin" ? "Create a new account" : "Already have an account? Sign in"}
+                  </Button>
+                </>
+              )}
             </Stack>
           </CardContent>
         </Card>
