@@ -1,8 +1,11 @@
 from datetime import datetime, timezone
+from uuid import uuid4
 
-from fastapi import APIRouter, File, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 
+from app.api.auth import get_current_user
 from app.core.config import get_settings
+from app.core.supabase import get_admin_client
 from app.schemas.documents import DocumentAnalysisResponse, DocumentProcessResponse
 from app.services.document_processor import (
     DocumentProcessingError,
@@ -15,11 +18,26 @@ router = APIRouter(prefix="/api/v1/documents", tags=["documents"])
 
 
 @router.get("")
-async def list_documents():
-    return {"documents": []}
+async def list_documents(user=Depends(get_current_user)):
+    try:
+        response = (
+            get_admin_client()
+            .table("documents")
+            .select(
+                "id,filename,content_type,file_size,status,category,"
+                "classification_confidence,summary,created_at,updated_at"
+            )
+            .eq("user_id", str(user.id))
+            .order("created_at", desc=True)
+            .execute()
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail="Unable to load documents.") from exc
+
+    return {"documents": response.data or []}
 
 
-async def _read_and_extract(file: UploadFile) -> str:
+async def _read_and_extract(file: UploadFile) -> tuple[bytes, str]:
     if not file.filename:
         raise HTTPException(status_code=400, detail="A filename is required.")
 
@@ -34,14 +52,16 @@ async def _read_and_extract(file: UploadFile) -> str:
         )
 
     try:
-        return extract_text(file.filename, file.content_type, data)
+        text = extract_text(file.filename, file.content_type, data)
     except DocumentProcessingError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    return data, text
 
 
 @router.post("/upload", response_model=DocumentProcessResponse)
 async def upload_document(file: UploadFile = File(...)):
-    text = await _read_and_extract(file)
+    _, text = await _read_and_extract(file)
     characters, words = document_stats(text)
 
     return DocumentProcessResponse(
@@ -57,7 +77,7 @@ async def upload_document(file: UploadFile = File(...)):
 
 @router.post("/analyze", response_model=DocumentAnalysisResponse)
 async def analyze_uploaded_document(file: UploadFile = File(...)):
-    text = await _read_and_extract(file)
+    _, text = await _read_and_extract(file)
     analysis = analyze_document(text)
 
     return DocumentAnalysisResponse(
@@ -67,3 +87,68 @@ async def analyze_uploaded_document(file: UploadFile = File(...)):
         confidence=analysis["confidence"],
         summary=analysis["summary"],
     )
+
+
+@router.post("/persist")
+async def persist_document(
+    file: UploadFile = File(...),
+    user=Depends(get_current_user),
+):
+    data, text = await _read_and_extract(file)
+    client = get_admin_client()
+
+    document_id = str(uuid4())
+    safe_name = (file.filename or "document").replace("/", "_").replace("\\", "_")
+    storage_path = f"{user.id}/{document_id}/{safe_name}"
+
+    try:
+        client.storage.from_("documents").upload(
+            storage_path,
+            data,
+            file_options={
+                "content-type": file.content_type or "application/octet-stream",
+                "upsert": "false",
+            },
+        )
+
+        characters, words = document_stats(text)
+        analysis = analyze_document(text)
+
+        response = (
+            client.table("documents")
+            .insert(
+                {
+                    "id": document_id,
+                    "user_id": str(user.id),
+                    "filename": safe_name,
+                    "storage_path": storage_path,
+                    "content_type": file.content_type,
+                    "file_size": len(data),
+                    "status": "completed",
+                    "extracted_text": text,
+                    "category": analysis["category"],
+                    "classification_confidence": analysis["confidence"],
+                    "summary": analysis["summary"],
+                }
+            )
+            .execute()
+        )
+
+        return {
+            "document": response.data[0] if response.data else {
+                "id": document_id,
+                "filename": safe_name,
+                "status": "completed",
+                "word_count": words,
+                "character_count": characters,
+            }
+        }
+    except Exception as exc:
+        try:
+            client.storage.from_("documents").remove([storage_path])
+        except Exception:
+            pass
+        raise HTTPException(
+            status_code=500,
+            detail="Document could not be stored and processed.",
+        ) from exc
