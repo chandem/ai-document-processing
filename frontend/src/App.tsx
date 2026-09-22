@@ -337,12 +337,12 @@ function App() {
           {message && <Alert severity="success" onClose={() => setMessage("")}>{message}</Alert>}
 
           <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr 1fr", md: "repeat(4, 1fr)" }, gap: 2 }}>
-            {[
+            {([
               ["Documents", stats.total, DescriptionOutlinedIcon],
               ["Completed", stats.completed, CheckCircleOutlineIcon],
               ["Processing", stats.processing, AutoAwesomeOutlinedIcon],
               ["Storage used", formatBytes(stats.size), ArticleOutlinedIcon],
-            ].map(([label, value, Icon]) => (
+            ] as const).map(([label, value, Icon]) => (
               <Card key={String(label)} elevation={0} sx={{ border: "1px solid #e1e7ef", borderRadius: 3 }}>
                 <CardContent>
                   <Stack direction="row" justifyContent="space-between" alignItems="center">
