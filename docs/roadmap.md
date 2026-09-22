@@ -21,6 +21,7 @@
 - [x] Persistent file storage (Supabase Storage)
 - [x] Document metadata persistence
 - [x] Document list / detail / delete
+- [x] Image upload support in frontend
 
 ## Phase 3 — AI
 - [x] AI provider interface
@@ -29,29 +30,31 @@
 - [x] LLM summarization (OpenAI)
 - [x] Structured field extraction (OpenAI JSON mode)
 - [x] Confidence and source references (heuristic + LLM)
-- [x] Question answering over a document
+- [x] Question answering over a document (API + UI)
 
 ## Phase 4 — AI workspace
-- [ ] Document dashboard
-- [ ] Document detail page
-- [x] Ask questions about a document (API)
+- [x] Document dashboard (basic)
+- [x] Document detail dialog with summary + text + Q&A
+- [x] Ask questions about a document (API + UI)
 - [ ] Conversation history
-- [ ] Citations/source snippets
+- [ ] Citations / source snippets
 - [ ] Human correction workflow
+- [ ] Display structured_data in UI
 
 ## Phase 5 — SaaS
-- [ ] Supabase Auth (partial – JWT helper present)
+- [x] Supabase Auth (email/password + recovery)
 - [ ] Usage tracking
 - [ ] Free/pro limits
 - [ ] Payments/subscriptions
 - [ ] Team workspaces
 - [ ] API keys
-- [ ] Public API
+- [ ] Public API rate limiting
 - [ ] Export to CSV/Excel/JSON
 
 ## Deployment
 - [x] Render configuration
 - [x] Vercel configuration
-- [ ] Dedicated Supabase project
+- [x] Docker image with Tesseract + Poppler
+- [ ] Dedicated Supabase project (production)
 - [ ] Production environment variables
 - [ ] Production smoke tests
