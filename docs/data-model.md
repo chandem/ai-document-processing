@@ -1,33 +1,48 @@
 # Data Model
 
-The planned persistence model is separated from the processing code.
+Schema source of truth: [`supabase/schema.sql`](../supabase/schema.sql)
 
-## Core tables
+## Tables
 
-### documents
-- id UUID primary key
-- user_id UUID referencing auth.users
-- filename
-- storage_path
-- content_type
-- file_size
-- status
-- extracted_text
-- category
-- classification_confidence
-- summary
-- timestamps
+### `documents`
 
-### processing_jobs
-Tracks asynchronous processing stages and errors.
+| Column | Type | Notes |
+|--------|------|--------|
+| `id` | uuid PK | `gen_random_uuid()` |
+| `user_id` | uuid | FK → `auth.users`, cascade delete |
+| `filename` | text | Sanitized upload name |
+| `storage_path` | text | Path in Storage bucket `documents` |
+| `content_type` | text | MIME type |
+| `file_size` | bigint | Bytes |
+| `status` | text | `uploaded` \| `processing` \| `completed` \| `failed` |
+| `extracted_text` | text | Full OCR / digital text |
+| `category` | text | invoice, receipt, contract, … |
+| `classification_confidence` | numeric(4,3) | 0–1 |
+| `summary` | text | LLM or extractive summary |
+| `created_at` / `updated_at` | timestamptz | Defaults `now()` |
 
-### extracted_fields
-Stores structured fields generated from a document.
+**RLS:** users can only CRUD their own rows (`auth.uid() = user_id`).
 
-### conversations
-Stores document Q&A sessions.
+### `processing_jobs`
 
-### messages
-Stores user questions and assistant answers.
+Optional job tracking for async pipelines.
 
-All user-owned tables should use Row Level Security and ownership policies before production access is enabled.
+| Column | Type |
+|--------|------|
+| `id` | uuid PK |
+| `document_id` | uuid FK → documents |
+| `user_id` | uuid FK → auth.users |
+| `stage` | text |
+| `status` | queued \| running \| completed \| failed |
+| `error_message` | text |
+| `started_at` / `completed_at` / `created_at` | timestamptz |
+
+## Storage
+
+- Bucket name: **`documents`** (private)
+- Object key pattern: `{user_id}/{document_id}/{filename}`
+
+## Planned extensions
+
+- `extracted_fields` — structured JSON fields per document
+- `conversations` / `messages` — multi-turn Q&A history with citations
