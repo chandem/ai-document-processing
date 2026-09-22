@@ -1,6 +1,10 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+
 from .api.router import api_router
+from .core.config import get_settings
+
+settings = get_settings()
 
 app = FastAPI(
     title="AI Document Processing API",
@@ -10,17 +14,19 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=False,
+    allow_origins=[settings.frontend_url, "http://localhost:5173"],
+    allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
 app.include_router(api_router)
 
+
 @app.get("/health")
 def health():
     return {"status": "ok", "service": "ai-document-processing"}
+
 
 @app.get("/api/v1/health")
 def api_health():
