@@ -1,14 +1,30 @@
 export interface DocumentItem {
   id: string;
   filename: string;
-  contentType?: string;
+  content_type?: string;
+  file_size?: number;
   status: "uploaded" | "processing" | "completed" | "failed";
-  createdAt?: string;
+  category?: string;
+  classification_confidence?: number;
+  summary?: string;
+  extracted_text?: string;
+  storage_path?: string;
+  created_at?: string;
+  updated_at?: string;
+  structured_data?: Record<string, unknown>;
+  analysis_source?: string;
 }
 
-export interface UploadResponse {
+export interface AskResponse {
+  document_id?: string;
+  question: string;
+  answer: string;
+}
+
+export interface AnalyzeResponse {
   filename: string;
-  content_type?: string;
   status: string;
-  message: string;
+  category: string;
+  confidence: number;
+  summary: string;
 }
