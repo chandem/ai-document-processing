@@ -17,6 +17,15 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - run: pip install -r requirements.txt
-      - run: pip install pytest
-      - run: pytest
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+      - name: Install system OCR deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends tesseract-ocr poppler-utils
+      - name: Install Python deps
+        run: pip install -r requirements.txt
+      - name: Run tests
+        run: pytest -q
+        env:
+          APP_ENV: development
