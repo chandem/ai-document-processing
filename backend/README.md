@@ -1,27 +1,56 @@
-# AI Document Processing Backend
+# AI Document Processing — Backend
 
-FastAPI backend for the AI Document Processing SaaS.
+FastAPI service for document upload, OCR, classification, summarization, Q&A, and Supabase persistence.
 
-## Local development
+## Quick start
 
 ```bash
 cd backend
 python -m venv .venv
-source .venv/bin/activate
+source .venv/bin/activate          # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
-uvicorn app.main:app --reload
+
+# System OCR (Ubuntu/Debian)
+# sudo apt-get install -y tesseract-ocr poppler-utils
+
+cp .env.example .env
+# Fill SUPABASE_* and optionally OPENAI_API_KEY
+
+uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
-Health check:
+- Health: http://127.0.0.1:8000/health  
+- OpenAPI: http://127.0.0.1:8000/docs  
 
-```
-GET /health
+## Environment
+
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `SUPABASE_URL` | For auth/storage | Project URL |
+| `SUPABASE_PUBLISHABLE_KEY` | For JWT verify | Anon / publishable key |
+| `SUPABASE_SERVICE_ROLE_KEY` | For DB/storage | Service role key |
+| `OPENAI_API_KEY` | Optional | Enables LLM classify/summary/Q&A |
+| `FRONTEND_URL` | CORS | e.g. `http://localhost:5173` |
+| `FRONTEND_URLS` | Optional | Extra comma-separated origins |
+| `APP_ENV` | Optional | `development` opens CORS fully |
+| `MAX_UPLOAD_SIZE_MB` | Optional | Default `20` |
+
+## Tests
+
+```bash
+pip install -r requirements.txt
+pytest -q
 ```
 
-Document processing:
+## Docker
 
-```
-POST /api/v1/documents/upload
+```bash
+docker build -t ai-doc-backend .
+docker run -p 8000:8000 --env-file .env ai-doc-backend
 ```
 
-The MVP extracts text from PDF, DOCX and common text files. OCR, LLM processing and persistent storage are the next layers.
+The image includes Tesseract + Poppler for OCR.
+
+## Main routes
+
+See [docs/api.md](../docs/api.md).
