@@ -1,5 +1,6 @@
 import { useState } from "react";
 import {
+  Alert,
   AppBar,
   Box,
   Button,
@@ -12,16 +13,32 @@ import {
   Typography,
 } from "@mui/material";
 import CloudUploadOutlinedIcon from "@mui/icons-material/CloudUploadOutlined";
+import { uploadDocument } from "./services/api";
 
 export default function App() {
   const [fileName, setFileName] = useState("");
+  const [message, setMessage] = useState("");
+  const [error, setError] = useState("");
+
+  async function handleFile(file: File) {
+    setFileName(file.name);
+    setMessage("");
+    setError("");
+
+    try {
+      const result = await uploadDocument(file);
+      setMessage(result.message || "Document uploaded successfully.");
+    } catch {
+      setError("Upload is not connected to a running backend yet.");
+    }
+  }
 
   return (
     <>
       <CssBaseline />
-      <AppBar position="static">
+      <AppBar position="static" elevation={0}>
         <Toolbar>
-          <Typography variant="h6" sx={{ flexGrow: 1 }}>
+          <Typography variant="h6" sx={{ flexGrow: 1, fontWeight: 700 }}>
             AI Document Processing
           </Typography>
           <Button color="inherit">Sign in</Button>
@@ -38,6 +55,9 @@ export default function App() {
             and ask questions about your documents.
           </Typography>
 
+          {message && <Alert severity="success" sx={{ mb: 2 }}>{message}</Alert>}
+          {error && <Alert severity="warning" sx={{ mb: 2 }}>{error}</Alert>}
+
           <Card sx={{ borderRadius: 3 }}>
             <CardContent sx={{ p: 5 }}>
               <Stack spacing={3} alignItems="center">
@@ -46,7 +66,7 @@ export default function App() {
                   Upload your first document
                 </Typography>
                 <Typography color="text.secondary" textAlign="center">
-                  PDF, PNG, JPG and other supported formats will be processed here.
+                  PDF, PNG, JPG and DOCX are planned for the processing pipeline.
                 </Typography>
 
                 <Button component="label" variant="contained" size="large">
@@ -55,9 +75,10 @@ export default function App() {
                     hidden
                     type="file"
                     accept=".pdf,.png,.jpg,.jpeg,.docx"
-                    onChange={(event) =>
-                      setFileName(event.target.files?.[0]?.name ?? "")
-                    }
+                    onChange={(event) => {
+                      const file = event.target.files?.[0];
+                      if (file) void handleFile(file);
+                    }}
                   />
                 </Button>
 
