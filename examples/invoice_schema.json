@@ -1,0 +1,32 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Invoice",
+  "type": "object",
+  "properties": {
+    "invoice_number": { "type": ["string", "null"] },
+    "invoice_date": { "type": ["string", "null"], "format": "date" },
+    "due_date": { "type": ["string", "null"], "format": "date" },
+    "vendor_name": { "type": ["string", "null"] },
+    "vendor_address": { "type": ["string", "null"] },
+    "vendor_tax_id": { "type": ["string", "null"] },
+    "customer_name": { "type": ["string", "null"] },
+    "customer_address": { "type": ["string", "null"] },
+    "subtotal": { "type": ["number", "null"] },
+    "tax_amount": { "type": ["number", "null"] },
+    "total_amount": { "type": ["number", "null"] },
+    "currency": { "type": ["string", "null"] },
+    "line_items": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "description": { "type": "string" },
+          "quantity": { "type": ["number", "null"] },
+          "unit_price": { "type": ["number", "null"] },
+          "amount": { "type": ["number", "null"] }
+        }
+      }
+    },
+    "payment_terms": { "type": ["string", "null"] }
+  }
+}
