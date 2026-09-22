@@ -17,29 +17,30 @@
 - [x] Document statistics
 - [x] Processing tests
 - [x] OCR provider interface
-- [ ] OCR implementation for scanned PDFs/images
-- [ ] Persistent file storage
-- [ ] Document metadata persistence
-- [ ] Document list/detail/delete
+- [x] OCR implementation for scanned PDFs/images (Tesseract + pdf2image)
+- [x] Persistent file storage (Supabase Storage)
+- [x] Document metadata persistence
+- [x] Document list / detail / delete
 
 ## Phase 3 — AI
 - [x] AI provider interface
 - [x] Local document classification baseline
 - [x] Local extractive summary baseline
-- [ ] LLM summarization
-- [ ] Structured field extraction
-- [ ] Confidence and source references
+- [x] LLM summarization (OpenAI)
+- [x] Structured field extraction (OpenAI JSON mode)
+- [x] Confidence and source references (heuristic + LLM)
+- [x] Question answering over a document
 
 ## Phase 4 — AI workspace
 - [ ] Document dashboard
 - [ ] Document detail page
-- [ ] Ask questions about a document
+- [x] Ask questions about a document (API)
 - [ ] Conversation history
 - [ ] Citations/source snippets
 - [ ] Human correction workflow
 
 ## Phase 5 — SaaS
-- [ ] Supabase Auth
+- [ ] Supabase Auth (partial – JWT helper present)
 - [ ] Usage tracking
 - [ ] Free/pro limits
 - [ ] Payments/subscriptions
