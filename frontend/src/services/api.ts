@@ -161,3 +161,16 @@ export async function exportDocument(
 export function getApiBaseUrl() {
   return API_BASE_URL;
 }
+
+export async function getProcessingHistory(documentId: string, accessToken: string) {
+  return apiRequest(`/documents/${documentId}/history`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+}
+
+export async function retryDocument(documentId: string, accessToken: string) {
+  return apiRequest(`/documents/${documentId}/retry`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+}
