@@ -1,8 +1,14 @@
+from __future__ import annotations
+
+import csv
+import io
+import json
 from datetime import datetime, timezone
+from typing import Any
 from uuid import uuid4
 
 from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, UploadFile
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
 from app.api.auth import get_current_user
@@ -15,23 +21,35 @@ from app.services.document_processor import (
     extract_text_async,
 )
 from app.services.intelligence import analyze_document, answer_question
+from app.services.usage import check_and_increment, get_usage_snapshot, try_persist_usage_event
 
 router = APIRouter(prefix="/api/v1/documents", tags=["documents"])
 
 
 class AskRequest(BaseModel):
     question: str = Field(..., min_length=1, max_length=2000)
+    conversation_id: str | None = None
+    save_history: bool = True
+
+
+class Citation(BaseModel):
+    index: int
+    snippet: str
+    score: float = 0.0
 
 
 class AskResponse(BaseModel):
     document_id: str | None = None
     question: str
     answer: str
+    citations: list[Citation] = []
+    conversation_id: str | None = None
+    source: str | None = None
 
 
 def _http_or_500(exc: Exception, fallback: str) -> HTTPException:
     if isinstance(exc, HTTPException):
-        return exc
+        return exp if False else exc
     return HTTPException(
         status_code=500,
         detail=f"{fallback} ({type(exc).__name__}: {exc})",
@@ -40,6 +58,14 @@ def _http_or_500(exc: Exception, fallback: str) -> HTTPException:
 
 def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def _csv_escape(value: Any) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, (dict, list)):
+        return json.dumps(value, ensure_ascii=False)
+    return str(value)
 
 
 @router.get("")
@@ -61,6 +87,66 @@ async def list_documents(user=Depends(get_current_user)):
         raise _http_or_500(exc, "Unable to load documents") from exc
 
     return {"documents": response.data or []}
+
+
+@router.get("/usage")
+async def usage_status(user=Depends(get_current_user)):
+    """Current free-tier daily usage for the signed-in user."""
+    return get_usage_snapshot(str(user.id))
+
+
+@router.get("/export.csv")
+async def export_documents_csv(user=Depends(get_current_user)):
+    """Export the user's document list as CSV (opens in Excel)."""
+    check_and_increment(str(user.id), "exports")
+    try_persist_usage_event(str(user.id), "exports")
+
+    try:
+        response = (
+            get_admin_client()
+            .table("documents")
+            .select(
+                "id,filename,content_type,file_size,status,category,"
+                "classification_confidence,summary,error_message,retry_count,"
+                "processed_at,created_at,updated_at"
+            )
+            .eq("user_id", str(user.id))
+            .order("created_at", desc=True)
+            .execute()
+        )
+    except Exception as exp:
+        raise _http_or_500(exp, "Unable to export documents") from exp
+
+    rows = response.data or []
+    fieldnames = [
+        "id",
+        "filename",
+        "content_type",
+        "file_size",
+        "status",
+        "category",
+        "classification_confidence",
+        "summary",
+        "error_message",
+        "retry_count",
+        "processed_at",
+        "created_at",
+        "updated_at",
+    ]
+    buffer = io.StringIO()
+    writer = csv.DictWriter(buffer, fieldnames=fieldnames, extrasaction="ignore")
+    writer.writeheader()
+    for row in rows:
+        writer.writerow({k: _csv_escape(row.get(k)) for k in fieldnames})
+
+    buffer.seek(0)
+    return StreamingResponse(
+        iter([buffer.getvalue()]),
+        media_type="text/csv",
+        headers={
+            "Content-Disposition": 'attachment; filename="documents-export.csv"',
+        },
+    )
 
 
 @router.get("/{document_id}")
@@ -109,6 +195,58 @@ async def document_processing_history(
     except Exception as exc:
         raise _http_or_500(exc, "Unable to load processing history") from exc
     return {"history": response.data or []}
+
+
+@router.get("/{document_id}/conversations")
+async def list_conversations(document_id: str, user=Depends(get_current_user)):
+    try:
+        response = (
+            get_admin_client()
+            .table("conversations")
+            .select("id,title,created_at,updated_at")
+            .eq("document_id", document_id)
+            .eq("user_id", str(user.id))
+            .order("updated_at", desc=True)
+            .execute()
+        )
+    except Exception as exp:
+        raise _http_or_500(exp, "Unable to load conversations") from exp
+    return {"conversations": response.data or []}
+
+
+@router.get("/{document_id}/conversations/{conversation_id}/messages")
+async def list_messages(
+    document_id: str,
+    conversation_id: str,
+    user=Depends(get_current_user),
+):
+    client = get_admin_client()
+    try:
+        conv = (
+            client.table("conversations")
+            .select("id")
+            .eq("id", conversation_id)
+            .eq("document_id", document_id)
+            .eq("user_id", str(user.id))
+            .maybe_single()
+            .execute()
+        )
+        if not conv.data:
+            raise HTTPException(status_code=404, detail="Conversation not found.")
+
+        response = (
+            client.table("messages")
+            .select("id,role,content,citations,created_at")
+            .eq("conversation_id", conversation_id)
+            .eq("user_id", str(user.id))
+            .order("created_at", desc=False)
+            .execute()
+        )
+    except HTTPException:
+        raise
+    except Exception as exp:
+        raise _http_or_500(exp, "Unable to load messages") from exp
+    return {"messages": response.data or []}
 
 
 @router.post("/{document_id}/retry")
@@ -207,6 +345,9 @@ async def retry_document(document_id: str, user=Depends(get_current_user)):
 @router.get("/{document_id}/export")
 async def export_document(document_id: str, user=Depends(get_current_user)):
     """Download document analysis as a JSON file."""
+    check_and_increment(str(user.id), "exports")
+    try_persist_usage_event(str(user.id), "exports", document_id=document_id)
+
     try:
         response = (
             get_admin_client()
@@ -239,6 +380,50 @@ async def export_document(document_id: str, user=Depends(get_current_user)):
         },
         headers={
             "Content-Disposition": f'attachment; filename="{filename}"',
+        },
+    )
+
+
+@router.get("/{document_id}/export.csv")
+async def export_document_csv(document_id: str, user=Depends(get_current_user)):
+    """Export a single document's metadata + summary as CSV."""
+    check_and_increment(str(user.id), "exports")
+    try_persist_usage_event(str(user.id), "exports", document_id=document_id)
+
+    try:
+        response = (
+            get_admin_client()
+            .table("documents")
+            .select(
+                "id,filename,content_type,file_size,status,category,"
+                "classification_confidence,summary,error_message,retry_count,"
+                "processed_at,structured_data,created_at,updated_at"
+            )
+            .eq("id", document_id)
+            .eq("user_id", str(user.id))
+            .maybe_single()
+            .execute()
+        )
+    except Exception as exp:
+        raise _http_or_500(exp, "Unable to export document") from exp
+
+    if not response.data:
+        raise HTTPException(status_code=404, detail="Document not found.")
+
+    doc = response.data
+    fieldnames = list(doc.keys())
+    buffer = io.StringIO()
+    writer = csv.DictWriter(buffer, fieldnames=fieldnames)
+    writer.writeheader()
+    writer.writerow({k: _csv_escape(doc.get(k)) for k in fieldnames})
+    buffer.seek(0)
+
+    safe_name = (doc.get("filename") or "document").rsplit(".", 1)[0]
+    return StreamingResponse(
+        iter([buffer.getvalue()]),
+        media_type="text/csv",
+        headers={
+            "Content-Disposition": f'attachment; filename="{safe_name}-export.csv"',
         },
     )
 
@@ -334,6 +519,74 @@ async def _read_and_extract(file: UploadFile) -> tuple[bytes, str]:
     return data, text
 
 
+async def _save_qa_messages(
+    *,
+    user_id: str,
+    document_id: str,
+    conversation_id: str | None,
+    question: str,
+    answer: str,
+    citations: list[dict[str, Any]],
+) -> str | None:
+    """Persist Q&A turn; create conversation if needed. Returns conversation_id."""
+    try:
+        client = get_admin_client()
+    except Exception:
+        return conversation_id
+
+    try:
+        if conversation_id:
+            existing = (
+                client.table("conversations")
+                .select("id")
+                .eq("id", conversation_id)
+                .eq("document_id", document_id)
+                .eq("user_id", user_id)
+                .maybe_single()
+                .execute()
+            )
+            if not existing.data:
+                conversation_id = None
+
+        if not conversation_id:
+            conversation_id = str(uuid4())
+            title = question.strip()[:80] or "Conversation"
+            client.table("conversations").insert(
+                {
+                    "id": conversation_id,
+                    "document_id": document_id,
+                    "user_id": user_id,
+                    "title": title,
+                }
+            ).execute()
+
+        client.table("messages").insert(
+            [
+                {
+                    "id": str(uuid4()),
+                    "conversation_id": conversation_id,
+                    "user_id": user_id,
+                    "role": "user",
+                    "content": question,
+                },
+                {
+                    "id": str(uuid4()),
+                    "conversation_id": conversation_id,
+                    "user_id": user_id,
+                    "role": "assistant",
+                    "content": answer,
+                    "citations": citations or None,
+                },
+            ]
+        ).execute()
+        client.table("conversations").update({"updated_at": _now_iso()}).eq(
+            "id", conversation_id
+        ).execute()
+        return conversation_id
+    except Exception:
+        return conversation_id
+
+
 @router.post("/upload", response_model=DocumentProcessResponse)
 async def upload_document(file: UploadFile = File(...)):
     _, text = await _read_and_extract(file)
@@ -372,8 +625,13 @@ async def ask_about_upload(
 ):
     """Upload a document and ask a question about it in one request."""
     _, text = await _read_and_extract(file)
-    answer = await answer_question(text, question)
-    return AskResponse(question=question, answer=answer)
+    result = await answer_question(text, question)
+    return AskResponse(
+        question=question,
+        answer=result["answer"],
+        citations=[Citation(**c) for c in result.get("citations") or []],
+        source=result.get("source"),
+    )
 
 
 @router.post("/{document_id}/ask", response_model=AskResponse)
@@ -382,7 +640,12 @@ async def ask_about_document(
     body: AskRequest,
     user=Depends(get_current_user),
 ):
-    """Ask a question about a previously persisted document."""
+    """Ask a question about a previously persisted document (with citations + history)."""
+    check_and_increment(str(user.id), "asks")
+    try_persist_usage_event(
+        str(user.id), "asks", document_id=document_id, metadata={"q_len": len(body.question)}
+    )
+
     try:
         response = (
             get_admin_client()
@@ -412,8 +675,28 @@ async def ask_about_document(
             detail="Document has no extracted text to answer questions against.",
         )
 
-    answer = await answer_question(text, body.question)
-    return AskResponse(document_id=document_id, question=body.question, answer=answer)
+    result = await answer_question(text, body.question)
+    citations = result.get("citations") or []
+    conversation_id = body.conversation_id
+
+    if body.save_history:
+        conversation_id = await _save_qa_messages(
+            user_id=str(user.id),
+            document_id=document_id,
+            conversation_id=conversation_id,
+            question=body.question,
+            answer=result["answer"],
+            citations=citations,
+        )
+
+    return AskResponse(
+        document_id=document_id,
+        question=body.question,
+        answer=result["answer"],
+        citations=[Citation(**c) for c in citations],
+        conversation_id=conversation_id,
+        source=result.get("source"),
+    )
 
 
 @router.post("/persist")
@@ -422,6 +705,8 @@ async def persist_document(
     file: UploadFile = File(...),
     user=Depends(get_current_user),
 ):
+    check_and_increment(str(user.id), "uploads")
+
     data, text = await _read_and_extract(file)
 
     try:
@@ -468,6 +753,8 @@ async def persist_document(
                 "started_at": _now_iso(),
             }
         ).execute()
+
+        try_persist_usage_event(str(user.id), "uploads", document_id=document_id)
 
         background_tasks.add_task(
             _process_persisted_document,
@@ -520,10 +807,8 @@ async def delete_document(document_id: str, user=Depends(get_current_user)):
             try:
                 client.storage.from_("documents").remove([storage_path])
             except Exception:
-                # Still delete the DB row even if storage cleanup fails
                 pass
 
-        # processing_jobs cascade via FK on document_id
         client.table("documents").delete().eq("id", document_id).eq(
             "user_id", str(user.id)
         ).execute()
