@@ -22,6 +22,9 @@
 - [x] Document metadata persistence
 - [x] Document list / detail / delete
 - [x] Image upload support in frontend
+- [x] Background processing after persist
+- [x] Processing job history + retry for failed docs
+- [x] Extracted-text size limits
 
 ## Phase 3 — AI
 - [x] AI provider interface
@@ -31,15 +34,19 @@
 - [x] Structured field extraction (OpenAI JSON mode)
 - [x] Confidence and source references (heuristic + LLM)
 - [x] Question answering over a document (API + UI)
+- [x] Structured data returned in API + UI
 
 ## Phase 4 — AI workspace
 - [x] Document dashboard (basic)
 - [x] Document detail dialog with summary + text + Q&A
 - [x] Ask questions about a document (API + UI)
+- [x] Processing status polling / history UI
+- [x] Retry failed documents from UI
+- [x] Document search / filter controls
+- [x] JSON export
 - [ ] Conversation history
 - [ ] Citations / source snippets
 - [ ] Human correction workflow
-- [ ] Display structured_data in UI
 
 ## Phase 5 — SaaS
 - [x] Supabase Auth (email/password + recovery)
@@ -49,12 +56,13 @@
 - [ ] Team workspaces
 - [ ] API keys
 - [ ] Public API rate limiting
-- [ ] Export to CSV/Excel/JSON
+- [ ] CSV / Excel export
 
 ## Deployment
 - [x] Render configuration
 - [x] Vercel configuration
 - [x] Docker image with Tesseract + Poppler
+- [x] Capability health endpoint (`/api/v1/health`)
 - [ ] Dedicated Supabase project (production)
 - [ ] Production environment variables
 - [ ] Production smoke tests
