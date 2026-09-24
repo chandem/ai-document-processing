@@ -40,62 +40,10 @@ async function blobToBytes(blob: Blob): Promise<Uint8Array> {
  * This avoids adding a heavy PDF dependency just for multi-page camera scans.
  */
 async function pagesToPdf(pages: Page[]): Promise<Blob> {
-  const objects: Uint8Array[] = [];
   const encoder = new TextEncoder();
-
-  const addText = (value: string) => {
-    objects.push(encoder.encode(value));
-    return objects.length;
-  };
-
-  addText("<< /Type /Catalog /Pages 2 0 R >>");
-
-  const pageObjectNumbers: number[] = [];
-  const pageParts: Array<{ imageObject: number; contentObject: number; page: Page }> = [];
-
-  const pagesObjectIndex = objects.length + 1;
-  objects.push(new Uint8Array());
-
-  for (const page of pages) {
-    const imageBytes = await blobToBytes(page.blob);
-    const imageObject = objects.length + 1;
-    objects.push(
-      encoder.encode(
-        `<< /Type /XObject /Subtype /Image /Width ${page.width} /Height ${page.height} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ${imageBytes.length} >>\nstream\n`,
-      ),
-    );
-    objects.push(imageBytes);
-    objects.push(encoder.encode("\nendstream"));
-    const imageEndObject = objects.length;
-    const contentObject = imageEndObject + 1;
-    objects.push(new Uint8Array());
-    pageParts.push({ imageObject, contentObject, page });
-    pageObjectNumbers.push(contentObject + 1);
-  }
-
-  // Replace placeholder page/content objects with final object numbers.
-  // Each page needs a page object after its content stream.
-  const pageObjects: Uint8Array[] = [];
-  const pageRefs: number[] = [];
-  for (const part of pageParts) {
-    const contentObject = objects.length + pageObjects.length + 1;
-    const pageObject = contentObject + 1;
-    const content = `q ${part.page.width} 0 0 ${part.page.height} 0 0 cm /Im0 Do Q`;
-    pageObjects.push(
-      encoder.encode(`<< /Length ${content.length} >>\nstream\n${content}\nendstream`),
-    );
-    pageObjects.push(
-      encoder.encode(
-        `<< /Type /Page /Parent ${pagesObjectIndex} 0 R /MediaBox [0 0 ${part.page.width} ${part.page.height}] /Resources << /XObject << /Im0 ${part.imageObject} 0 R >> >> /Contents ${contentObject} 0 R >>`,
-      ),
-    );
-    pageRefs.push(pageObject);
-  }
-
-  // The initial placeholders were inserted after each image. Rebuild a clean object list
-  // with explicit numbering so binary JPEG bytes remain untouched.
-  const finalObjects: Uint8Array[] = [];
-  finalObjects.push(encoder.encode("<< /Type /Catalog /Pages 2 0 R >>"));
+  const finalObjects: Uint8Array[] = [
+    encoder.encode("<< /Type /Catalog /Pages 2 0 R >>"),
+  ];
 
   const pageObjectNums: number[] = [];
   const contentObjectNums: number[] = [];
@@ -117,6 +65,7 @@ async function pagesToPdf(pages: Page[]): Promise<Blob> {
   for (let i = 0; i < pages.length; i++) {
     const page = pages[i];
     const content = `q ${page.width} 0 0 ${page.height} 0 0 cm /Im0 Do Q`;
+
     finalObjects.push(
       encoder.encode(
         `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${page.width} ${page.height}] /Resources << /XObject << /Im0 ${imageObjectNums[i]} 0 R >> >> /Contents ${contentObjectNums[i]} 0 R >>`,
@@ -124,42 +73,45 @@ async function pagesToPdf(pages: Page[]): Promise<Blob> {
     );
     finalObjects.push(
       encoder.encode(
-        `<< /Length ${content.length} >>\nstream\n${content}\nendstream`,
+        `<< /Length ${content.length} >>\\nstream\\n${content}\\nendstream`,
       ),
     );
+
     const bytes = await blobToBytes(page.blob);
     finalObjects.push(
       concatBytes([
         encoder.encode(
-          `<< /Type /XObject /Subtype /Image /Width ${page.width} /Height ${page.height} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ${bytes.length} >>\nstream\n`,
+          `<< /Type /XObject /Subtype /Image /Width ${page.width} /Height ${page.height} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ${bytes.length} >>\\nstream\\n`,
         ),
         bytes,
-        encoder.encode("\nendstream"),
+        encoder.encode("\\nendstream"),
       ]),
     );
   }
 
-  const header = encoder.encode("%PDF-1.4\n%\xFF\xFF\xFF\xFF\n");
+  const header = encoder.encode("%PDF-1.4\\n%\\xFF\\xFF\\xFF\\xFF\\n");
   const chunks: Uint8Array[] = [header];
   const offsets: number[] = [0];
   let offset = header.length;
 
   for (let i = 0; i < finalObjects.length; i++) {
     const objectNumber = i + 1;
-    const prefix = encoder.encode(`${objectNumber} 0 obj\n`);
-    const suffix = encoder.encode("\nendobj\n");
+    const prefix = encoder.encode(`${objectNumber} 0 obj\\n`);
+    const suffix = encoder.encode("\\nendobj\\n");
     offsets.push(offset);
     chunks.push(prefix, finalObjects[i], suffix);
     offset += prefix.length + finalObjects[i].length + suffix.length;
   }
 
   const xrefOffset = offset;
-  const xref = [`xref\n0 ${finalObjects.length + 1}\n0000000000 65535 f \n`];
+  const xref = [`xref\\n0 ${finalObjects.length + 1}\\n0000000000 65535 f \\n`];
   for (let i = 1; i <= finalObjects.length; i++) {
-    xref.push(`${String(offsets[i]).padStart(10, "0")} 00000 n \n`);
+    xref.push(`${String(offsets[i]).padStart(10, "0")} 00000 n \\n`);
   }
-  const trailer = `trailer\n<< /Size ${finalObjects.length + 1} /Root 1 0 R >>\nstartxref\n${xrefOffset}\n%%EOF\n`;
+
+  const trailer = `trailer\\n<< /Size ${finalObjects.length + 1} /Root 1 0 R >>\\nstartxref\\n${xrefOffset}\\n%%EOF\\n`;
   chunks.push(encoder.encode(xref.join("") + trailer));
+
   return new Blob(chunks, { type: "application/pdf" });
 }
 
