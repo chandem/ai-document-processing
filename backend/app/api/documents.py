@@ -140,6 +140,13 @@ async def _read_and_extract(file: UploadFile) -> tuple[bytes, str]:
     except DocumentProcessingError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
+    max_text = settings.max_extracted_text_chars
+    if len(text) > max_text:
+        raise HTTPException(
+            status_code=413,
+            detail=f"Extracted document text exceeds the {max_text:,} character processing limit.",
+        )
+
     return data, text
 
 
