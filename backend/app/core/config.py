@@ -15,8 +15,12 @@ class Settings(BaseSettings):
     supabase_service_role_key: str | None = None
     # Primary frontend origin (used for CORS)
     frontend_url: str = "http://localhost:5173"
-    # Optional comma-separated extra origins, e.g. https://my-app.vercel.app,https://preview.vercel.app
+    # Optional comma-separated extra origins
     frontend_urls: str | None = None
+    # Free-tier daily quotas (in-memory; raise for higher limits)
+    free_uploads_per_day: int = 50
+    free_asks_per_day: int = 100
+    free_exports_per_day: int = 50
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
