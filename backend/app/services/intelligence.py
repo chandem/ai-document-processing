@@ -5,6 +5,7 @@ import re
 from typing import Any
 
 from app.ai.provider import AIProvider, UnconfiguredAIProvider, get_ai_provider
+from app.services.citations import extract_citations
 
 logger = logging.getLogger(__name__)
 
@@ -47,7 +48,6 @@ def _heuristic_summary(text: str, max_sentences: int = 5) -> str:
 
 
 async def classify_document(text: str, provider: AIProvider | None = None) -> dict[str, Any]:
-    """Classify using LLM when available, otherwise heuristics."""
     provider = provider or get_ai_provider()
 
     if not isinstance(provider, UnconfiguredAIProvider):
@@ -84,7 +84,6 @@ async def summarize_document(
 
 
 async def analyze_document(text: str, provider: AIProvider | None = None) -> dict[str, Any]:
-    """Full analysis: classification + summary (+ optional structured data)."""
     provider = provider or get_ai_provider()
 
     classification = await classify_document(text, provider=provider)
@@ -98,7 +97,6 @@ async def analyze_document(text: str, provider: AIProvider | None = None) -> dic
         "summary": summary,
     }
 
-    # Attempt structured extraction when LLM is available
     if not isinstance(provider, UnconfiguredAIProvider):
         try:
             structured = await provider.extract_structured(text)
@@ -114,17 +112,35 @@ async def answer_question(
     text: str,
     question: str,
     provider: AIProvider | None = None,
-) -> str:
+    *,
+    include_citations: bool = True,
+) -> dict[str, Any]:
+    """Answer a question and optionally attach source snippets."""
     provider = provider or get_ai_provider()
+    citations = extract_citations(text, question) if include_citations else []
 
     if isinstance(provider, UnconfiguredAIProvider):
-        return (
-            "AI provider is not configured. Set OPENAI_API_KEY to enable "
-            "question answering over documents."
-        )
+        # Heuristic fallback: surface the best matching snippets as the answer
+        if citations:
+            joined = " ".join(c["snippet"] for c in citations[:2])
+            answer = (
+                "AI provider is not configured (set OPENAI_API_KEY for full Q&A). "
+                f"Relevant excerpts:\n\n{joined}"
+            )
+        else:
+            answer = (
+                "AI provider is not configured. Set OPENAI_API_KEY to enable "
+                "question answering over documents."
+            )
+        return {"answer": answer, "citations": citations, "source": "heuristic"}
 
     try:
-        return await provider.answer(text, question)
+        answer = await provider.answer(text, question)
+        return {"answer": answer, "citations": citations, "source": "llm"}
     except Exception as exc:
         logger.exception("Q&A failed")
-        return f"Unable to answer the question: {exc}"
+        return {
+            "answer": f"Unable to answer the question: {exc}",
+            "citations": citations,
+            "source": "error",
+        }
