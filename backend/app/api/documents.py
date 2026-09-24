@@ -189,6 +189,9 @@ async def _process_persisted_document(
 ) -> None:
     client = get_admin_client()
     try:
+        client.table("processing_jobs").update({
+            "stage": "analyzing",
+        }).eq("id", job_id).eq("document_id", document_id).execute()
         characters, words = document_stats(text)
         analysis = await analyze_document(text)
         client.table("documents").update({
@@ -201,6 +204,7 @@ async def _process_persisted_document(
             "processed_at": datetime.now(timezone.utc).isoformat(),
         }).eq("id", document_id).eq("user_id", user_id).execute()
         client.table("processing_jobs").update({
+            "stage": "completed",
             "status": "completed",
             "error": None,
         }).eq("id", job_id).eq("document_id", document_id).execute()
@@ -212,6 +216,7 @@ async def _process_persisted_document(
                 "error_message": safe_error,
             }).eq("id", document_id).eq("user_id", user_id).execute()
             client.table("processing_jobs").update({
+                "stage": "failed",
                 "status": "failed",
                 "error": safe_error,
             }).eq("id", job_id).eq("document_id", document_id).execute()
