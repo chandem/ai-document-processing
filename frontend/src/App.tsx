@@ -32,6 +32,7 @@ import CheckCircleOutlineIcon from "@mui/icons-material/CheckCircleOutline";
 import TableChartOutlinedIcon from "@mui/icons-material/TableChartOutlined";
 import ErrorOutlineIcon from "@mui/icons-material/ErrorOutline";
 import PhotoCameraOutlinedIcon from "@mui/icons-material/PhotoCameraOutlined";
+import type { SvgIconComponent } from "@mui/icons-material";
 import { supabase, isSupabaseConfigured } from "./services/supabase";
 import {
   askDocument,
@@ -470,14 +471,16 @@ export default function App() {
           {message && <Alert severity="success" onClose={() => setMessage("")}>{message}</Alert>}
 
           <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr 1fr", md: "repeat(5, 1fr)" }, gap: 2 }}>
-            {([
-              ["Documents", stats.total, DescriptionOutlinedIcon],
-              ["Completed", stats.completed, CheckCircleOutlineIcon],
-              ["Processing", stats.processing, AutoAwesomeOutlinedIcon],
-              ["Failed", stats.failed, ErrorOutlineIcon],
-              ["Storage", formatBytes(stats.size), ArticleOutlinedIcon],
-            ] as const).map(([label, value, Icon]) => (
-              <Card key={String(label)} elevation={0} sx={{ border: "1px solid #e1e7ef", borderRadius: 3 }}>
+            {(
+              [
+                { label: "Documents", value: stats.total, Icon: DescriptionOutlinedIcon },
+                { label: "Completed", value: stats.completed, Icon: CheckCircleOutlineIcon },
+                { label: "Processing", value: stats.processing, Icon: AutoAwesomeOutlinedIcon },
+                { label: "Failed", value: stats.failed, Icon: ErrorOutlineIcon },
+                { label: "Storage", value: formatBytes(stats.size), Icon: ArticleOutlinedIcon },
+              ] as { label: string; value: string | number; Icon: SvgIconComponent }[]
+            ).map(({ label, value, Icon }) => (
+              <Card key={label} elevation={0} sx={{ border: "1px solid #e1e7ef", borderRadius: 3 }}>
                 <CardContent>
                   <Stack direction="row" justifyContent="space-between" alignItems="center">
                     <Box>
