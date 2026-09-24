@@ -7,6 +7,8 @@ class Settings(BaseSettings):
     app_env: str = "development"
     port: int = 8000
     max_upload_size_mb: int = 20
+    max_extracted_text_chars: int = 200000
+    max_question_length: int = 2000
     openai_api_key: str | None = None
     supabase_url: str | None = None
     supabase_publishable_key: str | None = None
