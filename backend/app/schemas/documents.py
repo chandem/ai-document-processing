@@ -1,4 +1,6 @@
 from datetime import datetime
+from typing import Any
+
 from pydantic import BaseModel
 
 
@@ -26,3 +28,4 @@ class DocumentAnalysisResponse(BaseModel):
     category: str
     confidence: float
     summary: str
+    structured_data: dict[str, Any] | None = None
