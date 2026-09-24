@@ -177,6 +177,7 @@ async def analyze_uploaded_document(file: UploadFile = File(...)):
         category=analysis["category"],
         confidence=analysis["confidence"],
         summary=analysis["summary"],
+        structured_data=analysis.get("structured_data"),
     )
 
 
