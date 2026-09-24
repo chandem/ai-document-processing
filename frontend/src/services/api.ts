@@ -1,7 +1,7 @@
 const API_BASE_URL =
   import.meta.env.VITE_API_BASE_URL ||
   import.meta.env.VITE_API_URL ||
-  "/api/v1"; // relative path works with Vite proxy in dev and same-origin deploys
+  "/api/v1";
 
 const DEFAULT_TIMEOUT_MS = 60_000;
 
@@ -69,15 +69,64 @@ async function apiRequest(
   return response.json();
 }
 
+async function downloadBlob(
+  path: string,
+  accessToken: string,
+  suggestedName: string,
+  timeoutMs = DEFAULT_TIMEOUT_MS,
+) {
+  const url = buildUrl(path);
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+
+  let response: Response;
+  try {
+    response = await fetch(url, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+      signal: controller.signal,
+    });
+  } catch (err) {
+    throw new Error(networkErrorMessage(err));
+  } finally {
+    clearTimeout(timer);
+  }
+
+  if (!response.ok) {
+    let message = `Download failed (${response.status}).`;
+    try {
+      const body = await response.json();
+      if (body.detail) message = String(body.detail);
+    } catch {
+      // ignore
+    }
+    throw new Error(message);
+  }
+
+  const blob = await response.blob();
+  const objectUrl = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = objectUrl;
+  a.download = suggestedName;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(objectUrl);
+}
+
 export async function healthCheck() {
   return apiRequest("/health", {}, 10_000);
+}
+
+export async function getUsage(accessToken: string) {
+  return apiRequest("/documents/usage", {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
 }
 
 export async function uploadDocument(file: File, accessToken: string) {
   const formData = new FormData();
   formData.append("file", file);
 
-  // Persist can take longer (OCR + queue); allow 2 minutes
   return apiRequest(
     "/documents/persist",
     {
@@ -120,6 +169,7 @@ export async function askDocument(
   documentId: string,
   question: string,
   accessToken: string,
+  options?: { conversationId?: string; saveHistory?: boolean },
 ) {
   return apiRequest(
     `/documents/${documentId}/ask`,
@@ -129,9 +179,35 @@ export async function askDocument(
         Authorization: `Bearer ${accessToken}`,
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({ question }),
+      body: JSON.stringify({
+        question,
+        conversation_id: options?.conversationId ?? null,
+        save_history: options?.saveHistory ?? true,
+      }),
     },
     90_000,
+  );
+}
+
+export async function listConversations(
+  documentId: string,
+  accessToken: string,
+) {
+  return apiRequest(`/documents/${documentId}/conversations`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+}
+
+export async function listMessages(
+  documentId: string,
+  conversationId: string,
+  accessToken: string,
+) {
+  return apiRequest(
+    `/documents/${documentId}/conversations/${conversationId}/messages`,
+    {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    },
   );
 }
 
@@ -149,48 +225,35 @@ export async function analyzeDocument(file: File) {
   );
 }
 
-/** Trigger a browser download of the document export JSON. */
 export async function exportDocument(
   documentId: string,
   accessToken: string,
   suggestedName = "document-export.json",
 ) {
-  const url = buildUrl(`/documents/${documentId}/export`);
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), DEFAULT_TIMEOUT_MS);
+  return downloadBlob(
+    `/documents/${documentId}/export`,
+    accessToken,
+    suggestedName,
+  );
+}
 
-  let response: Response;
-  try {
-    response = await fetch(url, {
-      headers: { Authorization: `Bearer ${accessToken}` },
-      signal: controller.signal,
-    });
-  } catch (err) {
-    throw new Error(networkErrorMessage(err));
-  } finally {
-    clearTimeout(timer);
-  }
+export async function exportDocumentCsv(
+  documentId: string,
+  accessToken: string,
+  suggestedName = "document-export.csv",
+) {
+  return downloadBlob(
+    `/documents/${documentId}/export.csv`,
+    accessToken,
+    suggestedName,
+  );
+}
 
-  if (!response.ok) {
-    let message = `Export failed (${response.status}).`;
-    try {
-      const body = await response.json();
-      if (body.detail) message = String(body.detail);
-    } catch {
-      // ignore
-    }
-    throw new Error(message);
-  }
-
-  const blob = await response.blob();
-  const objectUrl = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = objectUrl;
-  a.download = suggestedName;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  URL.revokeObjectURL(objectUrl);
+export async function exportDocumentsCsv(
+  accessToken: string,
+  suggestedName = "documents-export.csv",
+) {
+  return downloadBlob("/documents/export.csv", accessToken, suggestedName);
 }
 
 export function getApiBaseUrl() {
