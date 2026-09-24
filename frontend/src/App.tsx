@@ -1033,6 +1033,47 @@ function App() {
                 )}
               </Box>
 
+              {selectedDocument.structured_data &&
+                typeof selectedDocument.structured_data === "object" &&
+                Object.keys(selectedDocument.structured_data).length > 0 && (
+                  <Box>
+                    <Typography variant="subtitle1" fontWeight={800}>
+                      Extracted fields
+                    </Typography>
+                    <Paper variant="outlined" sx={{ mt: 1, p: 2 }}>
+                      <Stack spacing={1}>
+                        {Object.entries(selectedDocument.structured_data).map(
+                          ([key, value]) => (
+                            <Box
+                              key={key}
+                              sx={{
+                                display: "grid",
+                                gridTemplateColumns: { xs: "1fr", sm: "180px 1fr" },
+                                gap: 1,
+                                py: 0.75,
+                                borderBottom: "1px solid #edf1f5",
+                              }}
+                            >
+                              <Typography variant="body2" fontWeight={700}>
+                                {key.replace(/_/g, " ")}
+                              </Typography>
+                              <Typography
+                                variant="body2"
+                                color="text.secondary"
+                                sx={{ whiteSpace: "pre-wrap", wordBreak: "break-word" }}
+                              >
+                                {typeof value === "object"
+                                  ? JSON.stringify(value, null, 2)
+                                  : String(value ?? "—")}
+                              </Typography>
+                            </Box>
+                          ),
+                        )}
+                      </Stack>
+                    </Paper>
+                  </Box>
+                )}
+
               <Box>
                 <Typography variant="subtitle1" fontWeight={800}>
                   Extracted text
