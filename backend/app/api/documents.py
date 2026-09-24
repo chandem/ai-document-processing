@@ -313,10 +313,6 @@ async def persist_document(
         )
 
         job_id = str(uuid4())
-        client.storage.from_("documents").upload(
-            storage_path, data,
-            file_options={"content-type": file.content_type or "application/octet-stream", "upsert": "false"},
-        )
         client.table("documents").insert({
             "id": document_id, "user_id": str(user.id), "filename": safe_name,
             "storage_path": storage_path, "content_type": file.content_type,
