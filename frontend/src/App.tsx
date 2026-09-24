@@ -29,6 +29,8 @@ import AutoAwesomeOutlinedIcon from "@mui/icons-material/AutoAwesomeOutlined";
 import DeleteOutlineIcon from "@mui/icons-material/DeleteOutline";
 import VisibilityOutlinedIcon from "@mui/icons-material/VisibilityOutlined";
 import RefreshOutlinedIcon from "@mui/icons-material/RefreshOutlined";
+import SearchOutlinedIcon from "@mui/icons-material/SearchOutlined";
+import DownloadOutlinedIcon from "@mui/icons-material/DownloadOutlined";
 import ArticleOutlinedIcon from "@mui/icons-material/ArticleOutlined";
 import CheckCircleOutlineIcon from "@mui/icons-material/CheckCircleOutline";
 import QuestionAnswerOutlinedIcon from "@mui/icons-material/QuestionAnswerOutlined";
@@ -92,6 +94,8 @@ function App() {
   const [mode, setMode] = useState<"signin" | "signup" | "forgot" | "reset">("signin");
   const [file, setFile] = useState<File | null>(null);
   const [documents, setDocuments] = useState<any[]>([]);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [categoryFilter, setCategoryFilter] = useState("all");
   const [selectedDocument, setSelectedDocument] = useState<any | null>(null);
   const [question, setQuestion] = useState("");
   const [answer, setAnswer] = useState("");
@@ -381,6 +385,25 @@ function App() {
     setError("");
     setWarning("");
   }
+
+  const filteredDocuments = useMemo(() => {
+    const query = searchQuery.trim().toLowerCase();
+    return documents.filter((doc) => {
+      const matchesQuery =
+        !query ||
+        String(doc.filename || "").toLowerCase().includes(query) ||
+        String(doc.category || "").toLowerCase().includes(query) ||
+        String(doc.summary || "").toLowerCase().includes(query);
+      const matchesCategory =
+        categoryFilter === "all" || String(doc.category || "other") === categoryFilter;
+      return matchesQuery && matchesCategory;
+    });
+  }, [documents, searchQuery, categoryFilter]);
+
+  const categories = useMemo(() => {
+    const values = documents.map((doc) => String(doc.category || "other"));
+    return ["all", ...Array.from(new Set(values)).sort()];
+  }, [documents]);
 
   const stats = useMemo(
     () => ({
@@ -800,6 +823,31 @@ function App() {
                     </span>
                   </Tooltip>
                 </Stack>
+                <Stack direction={{ xs: "column", sm: "row" }} spacing={1.5}>
+                  <TextField
+                    fullWidth
+                    size="small"
+                    placeholder="Search documents, categories or summaries…"
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    slotProps={{ input: { startAdornment: <SearchOutlinedIcon sx={{ mr: 1, color: "text.secondary" }} /> } }}
+                  />
+                  <TextField
+                    select
+                    size="small"
+                    label="Category"
+                    value={categoryFilter}
+                    onChange={(e) => setCategoryFilter(e.target.value)}
+                    sx={{ minWidth: { sm: 170 } }}
+                    SelectProps={{ native: true }}
+                  >
+                    {categories.map((category) => (
+                      <option key={category} value={category}>
+                        {category === "all" ? "All categories" : category}
+                      </option>
+                    ))}
+                  </TextField>
+                </Stack>
                 <Divider />
 
                 {loadingDocuments && <LinearProgress />}
@@ -820,7 +868,17 @@ function App() {
                   </Box>
                 ) : (
                   <Stack spacing={1.5}>
-                    {documents.map((document) => (
+                    {filteredDocuments.length === 0 ? (
+                      <Box sx={{ py: 5, textAlign: "center" }}>
+                        <SearchOutlinedIcon sx={{ fontSize: 42 }} color="disabled" />
+                        <Typography fontWeight={700} sx={{ mt: 1 }}>
+                          No matching documents
+                        </Typography>
+                        <Typography color="text.secondary">
+                          Try a different search or category.
+                        </Typography>
+                      </Box>
+                    ) : filteredDocuments.map((document) => (
                       <Paper
                         key={document.id}
                         variant="outlined"
@@ -855,6 +913,11 @@ function App() {
                             <Tooltip title="View document">
                               <IconButton onClick={() => handleView(document.id)}>
                                 <VisibilityOutlinedIcon />
+                              </IconButton>
+                            </Tooltip>
+                            <Tooltip title="Export JSON">
+                              <IconButton onClick={() => handleExport(document.id, document.filename)}>
+                                <DownloadOutlinedIcon />
                               </IconButton>
                             </Tooltip>
                             <Tooltip title="Delete document">
