@@ -46,7 +46,7 @@ async def list_documents(user=Depends(get_current_user)):
             .table("documents")
             .select(
                 "id,filename,content_type,file_size,status,category,"
-                "classification_confidence,summary,created_at,updated_at"
+                "classification_confidence,summary,error_message,retry_count,processed_at,structured_data,created_at,updated_at"
             )
             .eq("user_id", str(user.id))
             .order("created_at", desc=True)
@@ -66,7 +66,7 @@ async def get_document(document_id: str, user=Depends(get_current_user)):
             .table("documents")
             .select(
                 "id,filename,content_type,file_size,status,category,"
-                "classification_confidence,summary,extracted_text,storage_path,"
+                "classification_confidence,summary,error_message,retry_count,processed_at,structured_data,extracted_text,storage_path,"
                 "created_at,updated_at"
             )
             .eq("id", document_id)
@@ -83,6 +83,66 @@ async def get_document(document_id: str, user=Depends(get_current_user)):
     return {"document": response.data}
 
 
+@router.get("/{document_id}/history")
+async def document_processing_history(document_id: str, user=Depends(get_current_user)):
+    try:
+        response = get_admin_client().table("processing_jobs").select(
+            "id,stage,status,attempt,error,created_at,updated_at"
+        ).eq("document_id", document_id).eq("user_id", str(user.id)).order("created_at", desc=True).execute()
+    except Exception as exc:
+        raise _http_or_500(exc, "Unable to load processing history") from exc
+    return {"history": response.data or []}
+
+
+@router.post("/{document_id}/retry")
+async def retry_document(document_id: str, user=Depends(get_current_user)):
+    client = get_admin_client()
+    try:
+        response = client.table("documents").select(
+            "id,storage_path,status,retry_count"
+        ).eq("id", document_id).eq("user_id", str(user.id)).maybe_single().execute()
+        if not response.data:
+            raise HTTPException(status_code=404, detail="Document not found.")
+        doc = response.data
+        if doc.get("status") != "failed":
+            raise HTTPException(status_code=409, detail="Only failed documents can be retried.")
+        retry_count = int(doc.get("retry_count") or 0) + 1
+        client.table("documents").update({
+            "status": "processing", "error_message": None, "retry_count": retry_count
+        }).eq("id", document_id).eq("user_id", str(user.id)).execute()
+        job_id = str(uuid4())
+        client.table("processing_jobs").insert({
+            "id": job_id, "document_id": document_id, "user_id": str(user.id),
+            "stage": "analysis", "status": "processing", "attempt": retry_count + 1
+        }).execute()
+        try:
+            storage = client.storage.from_("documents").download(doc["storage_path"])
+            filename = doc["storage_path"].rsplit("/", 1)[-1]
+            text = await extract_text_async(filename, None, storage)
+            if len(text) > get_settings().max_extracted_text_chars:
+                raise ValueError("Extracted document text exceeds the processing limit.")
+            analysis = await analyze_document(text)
+            client.table("documents").update({
+                "status": "completed", "extracted_text": text, "category": analysis["category"],
+                "classification_confidence": analysis["confidence"], "summary": analysis["summary"],
+                "structured_data": analysis.get("structured_data"), "error_message": None,
+                "processed_at": datetime.now(timezone.utc).isoformat(),
+            }).eq("id", document_id).eq("user_id", str(user.id)).execute()
+            client.table("processing_jobs").update({"status": "completed", "error": None}).eq("id", job_id).execute()
+            return {"status": "completed", "retry_count": retry_count}
+        except Exception as exp:
+            safe_error = "Retry failed. Please try again later."
+            client.table("documents").update({"status": "failed", "error_message": safe_error}).eq(
+                "id", document_id).eq("user_id", str(user.id)).execute()
+            client.table("processing_jobs").update({"status": "failed", "error": safe_error}).eq(
+                "id", job_id).execute()
+            raise HTTPException(status_code=500, detail=safe_error) from exp
+    except HTTPException:
+        raise
+    except Exception as exp:
+        raise _http_or_500(exp, "Unable to retry document") from exp
+
+
 @router.get("/{document_id}/export")
 async def export_document(document_id: str, user=Depends(get_current_user)):
     """Download document analysis as a JSON file."""
@@ -92,7 +152,7 @@ async def export_document(document_id: str, user=Depends(get_current_user)):
             .table("documents")
             .select(
                 "id,filename,content_type,file_size,status,category,"
-                "classification_confidence,summary,extracted_text,"
+                "classification_confidence,summary,error_message,retry_count,processed_at,structured_data,extracted_text,"
                 "created_at,updated_at"
             )
             .eq("id", document_id)
@@ -252,60 +312,46 @@ async def persist_document(
             },
         )
 
-        characters, words = document_stats(text)
-        analysis = await analyze_document(text)
-
-        response = (
-            client.table("documents")
-            .insert(
-                {
-                    "id": document_id,
-                    "user_id": str(user.id),
-                    "filename": safe_name,
-                    "storage_path": storage_path,
-                    "content_type": file.content_type,
-                    "file_size": len(data),
-                    "status": "completed",
-                    "extracted_text": text,
-                    "category": analysis["category"],
-                    "classification_confidence": analysis["confidence"],
-                    "summary": analysis["summary"],
-                }
-            )
-            .execute()
+        job_id = str(uuid4())
+        client.storage.from_("documents").upload(
+            storage_path, data,
+            file_options={"content-type": file.content_type or "application/octet-stream", "upsert": "false"},
         )
-
-        doc = (
-            response.data[0]
-            if response.data
-            else {
-                "id": document_id,
-                "filename": safe_name,
-                "status": "completed",
-                "word_count": words,
-                "character_count": characters,
-                "category": analysis.get("category"),
-                "summary": analysis.get("summary"),
-            }
-        )
-        if analysis.get("structured_data"):
-            doc["structured_data"] = analysis["structured_data"]
-        if analysis.get("source"):
-            doc["analysis_source"] = analysis["source"]
-
-        return {"document": doc}
-    except HTTPException:
-        raise
-    except Exception as exp:
+        client.table("documents").insert({
+            "id": document_id, "user_id": str(user.id), "filename": safe_name,
+            "storage_path": storage_path, "content_type": file.content_type,
+            "file_size": len(data), "status": "processing", "extracted_text": text,
+            "retry_count": 0,
+        }).execute()
+        client.table("processing_jobs").insert({
+            "id": job_id, "document_id": document_id, "user_id": str(user.id),
+            "stage": "analysis", "status": "processing", "attempt": 1,
+        }).execute()
         try:
-            client.storage.from_("documents").remove([storage_path])
-        except Exception:
-            pass
-        raise HTTPException(
-            status_code=500,
-            detail=f"Document could not be stored and processed. ({type(exp).__name__}: {exp})",
-        ) from exp
-
+            characters, words = document_stats(text)
+            analysis = await analyze_document(text)
+            client.table("documents").update({
+                "status": "completed", "category": analysis["category"],
+                "classification_confidence": analysis["confidence"],
+                "summary": analysis["summary"], "structured_data": analysis.get("structured_data"),
+                "error_message": None, "processed_at": datetime.now(timezone.utc).isoformat(),
+            }).eq("id", document_id).eq("user_id", str(user.id)).execute()
+            client.table("processing_jobs").update({"status": "completed", "error": None}).eq("id", job_id).execute()
+            response = client.table("documents").select(
+                "id,filename,content_type,file_size,status,category,classification_confidence,"
+                "summary,error_message,retry_count,processed_at,structured_data,created_at,updated_at"
+            ).eq("id", document_id).eq("user_id", str(user.id)).maybe_single().execute()
+            doc = response.data or {"id": document_id, "filename": safe_name, "status": "completed"}
+            doc["character_count"] = characters
+            doc["word_count"] = words
+            return {"document": doc}
+        except Exception as exp:
+            safe_error = "Processing failed. You can retry this document."
+            client.table("documents").update({"status": "failed", "error_message": safe_error}).eq(
+                "id", document_id).eq("user_id", str(user.id)).execute()
+            client.table("processing_jobs").update({"status": "failed", "error": safe_error}).eq(
+                "id", job_id).execute()
+            raise HTTPException(status_code=500, detail=safe_error) from exp
 
 @router.delete("/{document_id}")
 async def delete_document(document_id: str, user=Depends(get_current_user)):
