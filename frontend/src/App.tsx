@@ -36,6 +36,7 @@ import { supabase, isSupabaseConfigured } from "./services/supabase";
 import {
   askDocument,
   deleteDocument,
+  exportDocument,
   getApiBaseUrl,
   getDocument,
   listDocuments,
@@ -92,7 +93,6 @@ function App() {
   const [file, setFile] = useState<File | null>(null);
   const [documents, setDocuments] = useState<any[]>([]);
   const [selectedDocument, setSelectedDocument] = useState<any | null>(null);
-  const [askOpen, setAskOpen] = useState(false);
   const [question, setQuestion] = useState("");
   const [answer, setAnswer] = useState("");
   const [asking, setAsking] = useState(false);
@@ -102,9 +102,6 @@ function App() {
   const [loading, setLoading] = useState(false);
   const [loadingDocuments, setLoadingDocuments] = useState(false);
   const [dragging, setDragging] = useState(false);
-  const [question, setQuestion] = useState("");
-  const [answer, setAnswer] = useState("");
-  const [asking, setAsking] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const sessionRef = useRef<Session | null>(null);
 
@@ -336,20 +333,6 @@ function App() {
       setError(
         err instanceof Error ? err.message : "Unable to answer the question.",
       );
-    } finally {
-      setAsking(false);
-    }
-  }
-
-  async function handleAsk() {
-    if (!session || !selectedDocument || !question.trim()) return;
-    setAsking(true);
-    setError("");
-    try {
-      const data = await askDocument(selectedDocument.id, question.trim(), session.access_token);
-      setAnswer(data.answer || "No answer was returned.");
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Unable to answer the question.");
     } finally {
       setAsking(false);
     }
@@ -1032,40 +1015,6 @@ function App() {
         </DialogActions>
       </Dialog>
 
-      <Dialog open={askOpen} onClose={() => !asking && setAskOpen(false)} fullWidth maxWidth="sm">
-        <DialogTitle sx={{ fontWeight: 800 }}>Ask AI about this document</DialogTitle>
-        <DialogContent>
-          <Stack spacing={2} sx={{ pt: 1 }}>
-            <Typography variant="body2" color="text.secondary">
-              Ask a question using the extracted text from {selectedDocument?.filename}.
-            </Typography>
-            <TextField
-              autoFocus
-              fullWidth
-              multiline
-              minRows={3}
-              label="Your question"
-              value={question}
-              onChange={(e) => setQuestion(e.target.value)}
-              placeholder="What are the main findings?"
-              disabled={asking}
-            />
-            {asking && <LinearProgress />}
-            {answer && (
-              <Paper variant="outlined" sx={{ p: 2, bgcolor: "#fafafa", whiteSpace: "pre-wrap" }}>
-                <Typography variant="subtitle2" fontWeight={800} sx={{ mb: 0.5 }}>Answer</Typography>
-                <Typography variant="body2">{answer}</Typography>
-              </Paper>
-            )}
-          </Stack>
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setAskOpen(false)} disabled={asking}>Close</Button>
-          <Button variant="contained" onClick={handleAsk} disabled={asking || !question.trim()}>
-            {asking ? "Thinking…" : "Ask AI"}
-          </Button>
-        </DialogActions>
-      </Dialog>
     </Box>
   );
 }
