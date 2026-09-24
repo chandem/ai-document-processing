@@ -7,18 +7,186 @@ import {
   DialogActions,
   DialogContent,
   DialogTitle,
+  FormControlLabel,
   Stack,
+  Switch,
   Typography,
 } from "@mui/material";
 import PhotoCameraOutlinedIcon from "@mui/icons-material/PhotoCameraOutlined";
 import CameraswitchOutlinedIcon from "@mui/icons-material/CameraswitchOutlined";
 import CameraAltOutlinedIcon from "@mui/icons-material/CameraAltOutlined";
+import AutoFixHighOutlinedIcon from "@mui/icons-material/AutoFixHighOutlined";
+import LayersOutlinedIcon from "@mui/icons-material/LayersOutlined";
 
 type Props = {
   open: boolean;
   onClose: () => void;
   onCapture: (file: File) => void;
 };
+
+type Page = {
+  blob: Blob;
+  url: string;
+  width: number;
+  height: number;
+};
+
+async function blobToBytes(blob: Blob): Promise<Uint8Array> {
+  return new Uint8Array(await blob.arrayBuffer());
+}
+
+/**
+ * Builds a small standards-compliant PDF directly in the browser.
+ * This avoids adding a heavy PDF dependency just for multi-page camera scans.
+ */
+async function pagesToPdf(pages: Page[]): Promise<Blob> {
+  const objects: Uint8Array[] = [];
+  const encoder = new TextEncoder();
+
+  const addText = (value: string) => {
+    objects.push(encoder.encode(value));
+    return objects.length;
+  };
+
+  addText("<< /Type /Catalog /Pages 2 0 R >>");
+
+  const pageObjectNumbers: number[] = [];
+  const pageParts: Array<{ imageObject: number; contentObject: number; page: Page }> = [];
+
+  const pagesObjectIndex = objects.length + 1;
+  objects.push(new Uint8Array());
+
+  for (const page of pages) {
+    const imageBytes = await blobToBytes(page.blob);
+    const imageObject = objects.length + 1;
+    objects.push(
+      encoder.encode(
+        `<< /Type /XObject /Subtype /Image /Width ${page.width} /Height ${page.height} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ${imageBytes.length} >>\nstream\n`,
+      ),
+    );
+    objects.push(imageBytes);
+    objects.push(encoder.encode("\nendstream"));
+    const imageEndObject = objects.length;
+    const contentObject = imageEndObject + 1;
+    objects.push(new Uint8Array());
+    pageParts.push({ imageObject, contentObject, page });
+    pageObjectNumbers.push(contentObject + 1);
+  }
+
+  // Replace placeholder page/content objects with final object numbers.
+  // Each page needs a page object after its content stream.
+  const pageObjects: Uint8Array[] = [];
+  const pageRefs: number[] = [];
+  for (const part of pageParts) {
+    const contentObject = objects.length + pageObjects.length + 1;
+    const pageObject = contentObject + 1;
+    const content = `q ${part.page.width} 0 0 ${part.page.height} 0 0 cm /Im0 Do Q`;
+    pageObjects.push(
+      encoder.encode(`<< /Length ${content.length} >>\nstream\n${content}\nendstream`),
+    );
+    pageObjects.push(
+      encoder.encode(
+        `<< /Type /Page /Parent ${pagesObjectIndex} 0 R /MediaBox [0 0 ${part.page.width} ${part.page.height}] /Resources << /XObject << /Im0 ${part.imageObject} 0 R >> >> /Contents ${contentObject} 0 R >>`,
+      ),
+    );
+    pageRefs.push(pageObject);
+  }
+
+  // The initial placeholders were inserted after each image. Rebuild a clean object list
+  // with explicit numbering so binary JPEG bytes remain untouched.
+  const finalObjects: Uint8Array[] = [];
+  finalObjects.push(encoder.encode("<< /Type /Catalog /Pages 2 0 R >>"));
+
+  const pageObjectNums: number[] = [];
+  const contentObjectNums: number[] = [];
+  const imageObjectNums: number[] = [];
+
+  let next = 3;
+  for (let i = 0; i < pages.length; i++) {
+    pageObjectNums.push(next++);
+    contentObjectNums.push(next++);
+    imageObjectNums.push(next++);
+  }
+
+  finalObjects.push(
+    encoder.encode(
+      `<< /Type /Pages /Count ${pages.length} /Kids [${pageObjectNums.map((n) => `${n} 0 R`).join(" ")}] >>`,
+    ),
+  );
+
+  for (let i = 0; i < pages.length; i++) {
+    const page = pages[i];
+    const content = `q ${page.width} 0 0 ${page.height} 0 0 cm /Im0 Do Q`;
+    finalObjects.push(
+      encoder.encode(
+        `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${page.width} ${page.height}] /Resources << /XObject << /Im0 ${imageObjectNums[i]} 0 R >> >> /Contents ${contentObjectNums[i]} 0 R >>`,
+      ),
+    );
+    finalObjects.push(
+      encoder.encode(
+        `<< /Length ${content.length} >>\nstream\n${content}\nendstream`,
+      ),
+    );
+    const bytes = await blobToBytes(page.blob);
+    finalObjects.push(
+      concatBytes([
+        encoder.encode(
+          `<< /Type /XObject /Subtype /Image /Width ${page.width} /Height ${page.height} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ${bytes.length} >>\nstream\n`,
+        ),
+        bytes,
+        encoder.encode("\nendstream"),
+      ]),
+    );
+  }
+
+  const header = encoder.encode("%PDF-1.4\n%\xFF\xFF\xFF\xFF\n");
+  const chunks: Uint8Array[] = [header];
+  const offsets: number[] = [0];
+  let offset = header.length;
+
+  for (let i = 0; i < finalObjects.length; i++) {
+    const objectNumber = i + 1;
+    const prefix = encoder.encode(`${objectNumber} 0 obj\n`);
+    const suffix = encoder.encode("\nendobj\n");
+    offsets.push(offset);
+    chunks.push(prefix, finalObjects[i], suffix);
+    offset += prefix.length + finalObjects[i].length + suffix.length;
+  }
+
+  const xrefOffset = offset;
+  const xref = [`xref\n0 ${finalObjects.length + 1}\n0000000000 65535 f \n`];
+  for (let i = 1; i <= finalObjects.length; i++) {
+    xref.push(`${String(offsets[i]).padStart(10, "0")} 00000 n \n`);
+  }
+  const trailer = `trailer\n<< /Size ${finalObjects.length + 1} /Root 1 0 R >>\nstartxref\n${xrefOffset}\n%%EOF\n`;
+  chunks.push(encoder.encode(xref.join("") + trailer));
+  return new Blob(chunks, { type: "application/pdf" });
+}
+
+function concatBytes(parts: Uint8Array[]): Uint8Array {
+  const total = parts.reduce((sum, part) => sum + part.length, 0);
+  const output = new Uint8Array(total);
+  let offset = 0;
+  for (const part of parts) {
+    output.set(part, offset);
+    offset += part.length;
+  }
+  return output;
+}
+
+function enhanceCanvas(ctx: CanvasRenderingContext2D, width: number, height: number) {
+  const image = ctx.getImageData(0, 0, width, height);
+  const data = image.data;
+  for (let i = 0; i < data.length; i += 4) {
+    const gray = 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
+    const contrast = (gray - 128) * 1.18 + 128;
+    const value = Math.max(0, Math.min(255, contrast));
+    data[i] = value;
+    data[i + 1] = value;
+    data[i + 2] = value;
+  }
+  ctx.putImageData(image, 0, 0);
+}
 
 export default function CameraScanDialog({ open, onClose, onCapture }: Props) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
@@ -27,7 +195,9 @@ export default function CameraScanDialog({ open, onClose, onCapture }: Props) {
   const [ready, setReady] = useState(false);
   const [facingMode, setFacingMode] = useState<"environment" | "user">("environment");
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
-  const [capturedFile, setCapturedFile] = useState<File | null>(null);
+  const [pages, setPages] = useState<Page[]>([]);
+  const [enhance, setEnhance] = useState(true);
+  const [buildingPdf, setBuildingPdf] = useState(false);
 
   const stopStream = useCallback(() => {
     streamRef.current?.getTracks().forEach((t) => t.stop());
@@ -76,27 +246,23 @@ export default function CameraScanDialog({ open, onClose, onCapture }: Props) {
   useEffect(() => {
     if (!open) {
       stopStream();
-      if (previewUrl) URL.revokeObjectURL(previewUrl);
+      pages.forEach((page) => URL.revokeObjectURL(page.url));
+      setPages([]);
       setPreviewUrl(null);
-      setCapturedFile(null);
       setError("");
       return;
     }
-    if (!previewUrl) {
-      void startCamera();
-    }
-    return () => {
-      stopStream();
-    };
+    if (!previewUrl) void startCamera();
+    return () => stopStream();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, facingMode]);
 
   useEffect(() => {
     return () => {
       stopStream();
-      if (previewUrl) URL.revokeObjectURL(previewUrl);
+      pages.forEach((page) => URL.revokeObjectURL(page.url));
     };
-  }, [previewUrl, stopStream]);
+  }, [pages, stopStream]);
 
   function captureFrame() {
     const video = videoRef.current;
@@ -107,12 +273,14 @@ export default function CameraScanDialog({ open, onClose, onCapture }: Props) {
     const canvas = document.createElement("canvas");
     canvas.width = width;
     canvas.height = height;
-    const ctx = canvas.getContext("2d");
+    const ctx = canvas.getContext("2d", { willReadFrequently: true });
     if (!ctx) {
       setError("Unable to capture frame.");
       return;
     }
+
     ctx.drawImage(video, 0, 0, width, height);
+    if (enhance) enhanceCanvas(ctx, width, height);
 
     canvas.toBlob(
       (blob) => {
@@ -120,35 +288,56 @@ export default function CameraScanDialog({ open, onClose, onCapture }: Props) {
           setError("Failed to create image from camera.");
           return;
         }
-        const stamp = new Date().toISOString().replace(/[:.]/g, "-");
-        const file = new File([blob], `scan-${stamp}.jpg`, { type: "image/jpeg" });
         const url = URL.createObjectURL(blob);
-        if (previewUrl) URL.revokeObjectURL(previewUrl);
+        setPages((previous) => [...previous, { blob, url, width, height }]);
         setPreviewUrl(url);
-        setCapturedFile(file);
         stopStream();
+        setError("");
       },
       "image/jpeg",
       0.92,
     );
   }
 
-  function retake() {
-    if (previewUrl) URL.revokeObjectURL(previewUrl);
-    setPreviewUrl(null);
-    setCapturedFile(null);
+  function retakeCurrent() {
+    const current = pages[pages.length - 1];
+    if (current) URL.revokeObjectURL(current.url);
+    setPages((previous) => previous.slice(0, -1));
+    setPreviewUrl(pages.length > 1 ? pages[pages.length - 2].url : null);
     void startCamera();
   }
 
-  function usePhoto() {
-    if (!capturedFile) return;
-    onCapture(capturedFile);
-    onClose();
+  function addPage() {
+    setPreviewUrl(null);
+    void startCamera();
+  }
+
+  async function useScan() {
+    if (pages.length === 0 || buildingPdf) return;
+    setBuildingPdf(true);
+    setError("");
+    try {
+      if (pages.length === 1) {
+        const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+        onCapture(new File([pages[0].blob], `scan-${stamp}.jpg`, { type: "image/jpeg" }));
+      } else {
+        const pdf = await pagesToPdf(pages);
+        const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+        onCapture(new File([pdf], `scan-${stamp}.pdf`, { type: "application/pdf" }));
+      }
+      onClose();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to create the scanned document.");
+    } finally {
+      setBuildingPdf(false);
+    }
   }
 
   function flipCamera() {
     setFacingMode((prev) => (prev === "environment" ? "user" : "environment"));
   }
+
+  const currentPreview = previewUrl || (pages.length ? pages[pages.length - 1].url : null);
 
   return (
     <Dialog open={open} onClose={onClose} fullWidth maxWidth="sm">
@@ -161,8 +350,8 @@ export default function CameraScanDialog({ open, onClose, onCapture }: Props) {
       <DialogContent dividers>
         <Stack spacing={2}>
           <Typography variant="body2" color="text.secondary">
-            Point the camera at a document, receipt, or page. Capture a clear photo — it will be
-            sent through OCR and AI analysis like any other image upload.
+            Scan one or more pages. Images can be enhanced for OCR, and multiple pages are combined
+            into one PDF automatically.
           </Typography>
 
           {error && <Alert severity="error">{error}</Alert>}
@@ -179,13 +368,8 @@ export default function CameraScanDialog({ open, onClose, onCapture }: Props) {
               placeItems: "center",
             }}
           >
-            {previewUrl ? (
-              <Box
-                component="img"
-                src={previewUrl}
-                alt="Captured document"
-                sx={{ width: "100%", height: "100%", objectFit: "contain" }}
-              />
+            {currentPreview ? (
+              <Box component="img" src={currentPreview} alt="Scanned document" sx={{ width: "100%", height: "100%", objectFit: "contain" }} />
             ) : (
               <Box
                 component="video"
@@ -193,65 +377,66 @@ export default function CameraScanDialog({ open, onClose, onCapture }: Props) {
                 playsInline
                 muted
                 autoPlay
-                sx={{
-                  width: "100%",
-                  height: "100%",
-                  objectFit: "cover",
-                  transform: facingMode === "user" ? "scaleX(-1)" : undefined,
-                }}
+                sx={{ width: "100%", height: "100%", objectFit: "cover", transform: facingMode === "user" ? "scaleX(-1)" : undefined }}
               />
             )}
-
-            {/* Document frame guide */}
-            {!previewUrl && ready && (
-              <Box
-                sx={{
-                  pointerEvents: "none",
-                  position: "absolute",
-                  inset: "8%",
-                  border: "2px dashed rgba(255,255,255,0.55)",
-                  borderRadius: 1,
-                }}
-              />
+            {!currentPreview && ready && (
+              <Box sx={{ pointerEvents: "none", position: "absolute", inset: "8%", border: "2px dashed rgba(255,255,255,0.55)", borderRadius: 1 }} />
             )}
           </Box>
 
-          {!previewUrl && !error && (
+          <Stack direction="row" justifyContent="space-between" alignItems="center" flexWrap="wrap" gap={1}>
+            <FormControlLabel
+              control={<Switch checked={enhance} onChange={(event) => setEnhance(event.target.checked)} />}
+              label={
+                <Stack direction="row" spacing={0.5} alignItems="center">
+                  <AutoFixHighOutlinedIcon fontSize="small" />
+                  <span>Enhance for OCR</span>
+                </Stack>
+              }
+            />
+            {pages.length > 0 && (
+              <ChipLike text={`${pages.length} page${pages.length === 1 ? "" : "s"} captured`} />
+            )}
+          </Stack>
+
+          {!currentPreview && !error && (
             <Typography variant="caption" color="text.secondary" textAlign="center">
               {ready ? "Align the document inside the frame, then capture." : "Starting camera…"}
             </Typography>
           )}
         </Stack>
       </DialogContent>
+
       <DialogActions sx={{ px: 2, py: 1.5, flexWrap: "wrap", gap: 1 }}>
         <Button onClick={onClose}>Cancel</Button>
-        {!previewUrl ? (
+        {!currentPreview ? (
           <>
-            <Button
-              startIcon={<CameraswitchOutlinedIcon />}
-              onClick={flipCamera}
-              disabled={Boolean(error)}
-            >
+            <Button startIcon={<CameraswitchOutlinedIcon />} onClick={flipCamera} disabled={Boolean(error)}>
               Flip
             </Button>
-            <Button
-              variant="contained"
-              startIcon={<CameraAltOutlinedIcon />}
-              onClick={captureFrame}
-              disabled={!ready}
-            >
-              Capture
+            <Button variant="contained" startIcon={<CameraAltOutlinedIcon />} onClick={captureFrame} disabled={!ready}>
+              Capture page
             </Button>
           </>
         ) : (
           <>
-            <Button onClick={retake}>Retake</Button>
-            <Button variant="contained" onClick={usePhoto}>
-              Use photo
+            <Button onClick={retakeCurrent}>Retake</Button>
+            <Button startIcon={<LayersOutlinedIcon />} onClick={addPage}>Add page</Button>
+            <Button variant="contained" onClick={useScan} disabled={buildingPdf}>
+              {buildingPdf ? "Preparing…" : pages.length > 1 ? "Use PDF" : "Use photo"}
             </Button>
           </>
         )}
       </DialogActions>
     </Dialog>
+  );
+}
+
+function ChipLike({ text }: { text: string }) {
+  return (
+    <Box sx={{ px: 1.2, py: 0.5, borderRadius: 10, bgcolor: "action.hover", fontSize: 13, fontWeight: 700 }}>
+      {text}
+    </Box>
   );
 }
