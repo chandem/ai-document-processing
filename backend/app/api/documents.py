@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 from uuid import uuid4
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, UploadFile
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
@@ -181,6 +181,44 @@ async def export_document(document_id: str, user=Depends(get_current_user)):
     )
 
 
+async def _process_persisted_document(
+    document_id: str,
+    job_id: str,
+    user_id: str,
+    text: str,
+) -> None:
+    client = get_admin_client()
+    try:
+        characters, words = document_stats(text)
+        analysis = await analyze_document(text)
+        client.table("documents").update({
+            "status": "completed",
+            "category": analysis["category"],
+            "classification_confidence": analysis["confidence"],
+            "summary": analysis["summary"],
+            "structured_data": analysis.get("structured_data"),
+            "error_message": None,
+            "processed_at": datetime.now(timezone.utc).isoformat(),
+        }).eq("id", document_id).eq("user_id", user_id).execute()
+        client.table("processing_jobs").update({
+            "status": "completed",
+            "error": None,
+        }).eq("id", job_id).eq("document_id", document_id).execute()
+    except Exception as exc:
+        safe_error = "Processing failed. You can retry this document."
+        try:
+            client.table("documents").update({
+                "status": "failed",
+                "error_message": safe_error,
+            }).eq("id", document_id).eq("user_id", user_id).execute()
+            client.table("processing_jobs").update({
+                "status": "failed",
+                "error": safe_error,
+            }).eq("id", job_id).eq("document_id", document_id).execute()
+        except Exception:
+            pass
+
+
 async def _read_and_extract(file: UploadFile) -> tuple[bytes, str]:
     if not file.filename:
         raise HTTPException(status_code=400, detail="A filename is required.")
@@ -288,6 +326,7 @@ async def ask_about_document(
 
 @router.post("/persist")
 async def persist_document(
+    background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
     user=Depends(get_current_user),
 ):
@@ -314,40 +353,51 @@ async def persist_document(
 
         job_id = str(uuid4())
         client.table("documents").insert({
-            "id": document_id, "user_id": str(user.id), "filename": safe_name,
-            "storage_path": storage_path, "content_type": file.content_type,
-            "file_size": len(data), "status": "processing", "extracted_text": text,
+            "id": document_id,
+            "user_id": str(user.id),
+            "filename": safe_name,
+            "storage_path": storage_path,
+            "content_type": file.content_type,
+            "file_size": len(data),
+            "status": "processing",
+            "extracted_text": text,
             "retry_count": 0,
         }).execute()
         client.table("processing_jobs").insert({
-            "id": job_id, "document_id": document_id, "user_id": str(user.id),
-            "stage": "analysis", "status": "processing", "attempt": 1,
+            "id": job_id,
+            "document_id": document_id,
+            "user_id": str(user.id),
+            "stage": "analysis",
+            "status": "processing",
+            "attempt": 1,
         }).execute()
+
+        background_tasks.add_task(
+            _process_persisted_document,
+            document_id,
+            job_id,
+            str(user.id),
+            text,
+        )
+
+        return {
+            "document": {
+                "id": document_id,
+                "filename": safe_name,
+                "content_type": file.content_type,
+                "file_size": len(data),
+                "status": "processing",
+                "retry_count": 0,
+                "created_at": datetime.now(timezone.utc).isoformat(),
+            }
+        }
+    except Exception as exp:
         try:
-            characters, words = document_stats(text)
-            analysis = await analyze_document(text)
-            client.table("documents").update({
-                "status": "completed", "category": analysis["category"],
-                "classification_confidence": analysis["confidence"],
-                "summary": analysis["summary"], "structured_data": analysis.get("structured_data"),
-                "error_message": None, "processed_at": datetime.now(timezone.utc).isoformat(),
-            }).eq("id", document_id).eq("user_id", str(user.id)).execute()
-            client.table("processing_jobs").update({"status": "completed", "error": None}).eq("id", job_id).execute()
-            response = client.table("documents").select(
-                "id,filename,content_type,file_size,status,category,classification_confidence,"
-                "summary,error_message,retry_count,processed_at,structured_data,created_at,updated_at"
-            ).eq("id", document_id).eq("user_id", str(user.id)).maybe_single().execute()
-            doc = response.data or {"id": document_id, "filename": safe_name, "status": "completed"}
-            doc["character_count"] = characters
-            doc["word_count"] = words
-            return {"document": doc}
-        except Exception as exp:
-            safe_error = "Processing failed. You can retry this document."
-            client.table("documents").update({"status": "failed", "error_message": safe_error}).eq(
-                "id", document_id).eq("user_id", str(user.id)).execute()
-            client.table("processing_jobs").update({"status": "failed", "error": safe_error}).eq(
-                "id", job_id).execute()
-            raise HTTPException(status_code=500, detail=safe_error) from exp
+            client.storage.from_("documents").remove([storage_path])
+        except Exception:
+            pass
+        raise _http_or_500(exp, "Unable to queue document for processing") from exp
+
 
 @router.delete("/{document_id}")
 async def delete_document(document_id: str, user=Depends(get_current_user)):
