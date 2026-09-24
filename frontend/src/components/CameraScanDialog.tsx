@@ -73,7 +73,7 @@ async function pagesToPdf(pages: Page[]): Promise<Blob> {
     );
     finalObjects.push(
       encoder.encode(
-        `<< /Length ${content.length} >>\\nstream\\n${content}\\nendstream`,
+        `<< /Length ${content.length} >>\nstream\n${content}\nendstream`,
       ),
     );
 
@@ -81,35 +81,35 @@ async function pagesToPdf(pages: Page[]): Promise<Blob> {
     finalObjects.push(
       concatBytes([
         encoder.encode(
-          `<< /Type /XObject /Subtype /Image /Width ${page.width} /Height ${page.height} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ${bytes.length} >>\\nstream\\n`,
+          `<< /Type /XObject /Subtype /Image /Width ${page.width} /Height ${page.height} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ${bytes.length} >>\nstream\n`,
         ),
         bytes,
-        encoder.encode("\\nendstream"),
+        encoder.encode("\nendstream"),
       ]),
     );
   }
 
-  const header = encoder.encode("%PDF-1.4\\n%\\xFF\\xFF\\xFF\\xFF\\n");
+  const header = encoder.encode("%PDF-1.4\n%\xFF\xFF\xFF\xFF\n");
   const chunks: Uint8Array[] = [header];
   const offsets: number[] = [0];
   let offset = header.length;
 
   for (let i = 0; i < finalObjects.length; i++) {
     const objectNumber = i + 1;
-    const prefix = encoder.encode(`${objectNumber} 0 obj\\n`);
-    const suffix = encoder.encode("\\nendobj\\n");
+    const prefix = encoder.encode(`${objectNumber} 0 obj\n`);
+    const suffix = encoder.encode("\nendobj\n");
     offsets.push(offset);
     chunks.push(prefix, finalObjects[i], suffix);
     offset += prefix.length + finalObjects[i].length + suffix.length;
   }
 
   const xrefOffset = offset;
-  const xref = [`xref\\n0 ${finalObjects.length + 1}\\n0000000000 65535 f \\n`];
+  const xref = [`xref\n0 ${finalObjects.length + 1}\n0000000000 65535 f \n`];
   for (let i = 1; i <= finalObjects.length; i++) {
     xref.push(`${String(offsets[i]).padStart(10, "0")} 00000 n \\n`);
   }
 
-  const trailer = `trailer\\n<< /Size ${finalObjects.length + 1} /Root 1 0 R >>\\nstartxref\\n${xrefOffset}\\n%%EOF\\n`;
+  const trailer = `trailer\n<< /Size ${finalObjects.length + 1} /Root 1 0 R >>\nstartxref\n${xrefOffset}\n%%EOF\n`;
   chunks.push(encoder.encode(xref.join("") + trailer));
 
   return new Blob(chunks, { type: "application/pdf" });
@@ -212,9 +212,12 @@ export default function CameraScanDialog({ open, onClose, onCapture }: Props) {
   useEffect(() => {
     return () => {
       stopStream();
-      pages.forEach((page) => URL.revokeObjectURL(page.url));
+      setPages((current) => {
+        current.forEach((page) => URL.revokeObjectURL(page.url));
+        return [];
+      });
     };
-  }, [pages, stopStream]);
+  }, [stopStream]);
 
   function captureFrame() {
     const video = videoRef.current;
