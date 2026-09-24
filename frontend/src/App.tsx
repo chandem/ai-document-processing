@@ -31,6 +31,7 @@ import ArticleOutlinedIcon from "@mui/icons-material/ArticleOutlined";
 import CheckCircleOutlineIcon from "@mui/icons-material/CheckCircleOutline";
 import TableChartOutlinedIcon from "@mui/icons-material/TableChartOutlined";
 import ErrorOutlineIcon from "@mui/icons-material/ErrorOutline";
+import PhotoCameraOutlinedIcon from "@mui/icons-material/PhotoCameraOutlined";
 import { supabase, isSupabaseConfigured } from "./services/supabase";
 import {
   askDocument,
@@ -51,6 +52,7 @@ import {
 import type { Session } from "@supabase/supabase-js";
 import type { Citation, Message, UsageSnapshot } from "./types";
 import DocumentDialog from "./components/DocumentDialog";
+import CameraScanDialog from "./components/CameraScanDialog";
 
 const MAX_FILE_SIZE_MB = 20;
 const ACCEPTED = [".pdf",".docx",".txt",".md",".csv",".json",".png",".jpg",".jpeg",".tiff",".tif",".webp",".bmp"];
@@ -98,6 +100,7 @@ export default function App() {
   const [loading, setLoading] = useState(false);
   const [loadingDocuments, setLoadingDocuments] = useState(false);
   const [dragging, setDragging] = useState(false);
+  const [cameraOpen, setCameraOpen] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const sessionRef = useRef<Session | null>(null);
 
@@ -454,7 +457,7 @@ export default function App() {
             <Typography variant="overline" color="primary" fontWeight={700}>Document intelligence workspace</Typography>
             <Typography variant="h2" sx={{ fontWeight: 850, fontSize: { xs: "2.2rem", md: "3.2rem" }, mt: 0.5 }}>Turn documents into useful data.</Typography>
             <Typography variant="h6" color="text.secondary" sx={{ mt: 1.5, maxWidth: 760, fontWeight: 400 }}>
-              Upload, OCR, classify, ask with citations, export CSV/JSON — with free-tier quotas.
+              Upload, camera-scan, OCR, classify, ask with citations, export CSV/JSON.
             </Typography>
           </Box>
 
@@ -495,7 +498,7 @@ export default function App() {
                   <CloudUploadOutlinedIcon color="primary" fontSize="large" />
                   <Box>
                     <Typography variant="h5" fontWeight={800}>Upload a document</Typography>
-                    <Typography color="text.secondary">Max 20 MB · PDF, DOCX, images, text formats</Typography>
+                    <Typography color="text.secondary">Max 20 MB · PDF, DOCX, images, text formats — or scan with your camera</Typography>
                   </Box>
                 </Stack>
                 <Paper
@@ -517,6 +520,15 @@ export default function App() {
                 <Stack direction={{ xs: "column", sm: "row" }} spacing={1.5}>
                   <Button variant="contained" size="large" disabled={!file || loading} onClick={handleUpload} startIcon={<AutoAwesomeOutlinedIcon />}>
                     {loading ? "Processing…" : "Process and save"}
+                  </Button>
+                  <Button
+                    variant="outlined"
+                    size="large"
+                    startIcon={<PhotoCameraOutlinedIcon />}
+                    onClick={() => setCameraOpen(true)}
+                    disabled={loading}
+                  >
+                    Camera scan
                   </Button>
                   {file && <Button variant="outlined" onClick={() => { setFile(null); if (fileInputRef.current) fileInputRef.current.value = ""; }}>Clear</Button>}
                 </Stack>
@@ -583,6 +595,15 @@ export default function App() {
           </Card>
         </Stack>
       </Container>
+
+      <CameraScanDialog
+        open={cameraOpen}
+        onClose={() => setCameraOpen(false)}
+        onCapture={(captured) => {
+          selectFile(captured);
+          setMessage(`Scanned photo ready: ${captured.name}. Click Process and save.`);
+        }}
+      />
 
       <DocumentDialog
         document={selectedDocument}
