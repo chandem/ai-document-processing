@@ -41,7 +41,9 @@ import {
   exportDocument,
   getApiBaseUrl,
   getDocument,
+  getProcessingHistory,
   listDocuments,
+  retryDocument,
   uploadDocument,
 } from "./services/api";
 import type { Session } from "@supabase/supabase-js";
@@ -100,6 +102,9 @@ function App() {
   const [question, setQuestion] = useState("");
   const [answer, setAnswer] = useState("");
   const [asking, setAsking] = useState(false);
+  const [processingHistory, setProcessingHistory] = useState<any[]>([]);
+  const [loadingHistory, setLoadingHistory] = useState(false);
+  const [retrying, setRetrying] = useState(false);
   const [error, setError] = useState("");
   const [warning, setWarning] = useState("");
   const [message, setMessage] = useState("");
@@ -313,9 +318,17 @@ function App() {
     setError("");
     setQuestion("");
     setAnswer("");
+    setProcessingHistory([]);
     try {
       const data = await getDocument(documentId, session.access_token);
       setSelectedDocument(data.document);
+      setLoadingHistory(true);
+      try {
+        const history = await getProcessingHistory(documentId, session.access_token);
+        setProcessingHistory(history.history ?? []);
+      } finally {
+        setLoadingHistory(false);
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to load document.");
     }
@@ -980,6 +993,48 @@ function App() {
                 )}
               </Stack>
 
+              {selectedDocument.status === "failed" && (
+                <Alert
+                  severity="error"
+                  action={
+                    <Button
+                      color="inherit"
+                      size="small"
+                      onClick={async () => {
+                        if (!session) return;
+                        setRetrying(true);
+                        setError("");
+                        try {
+                          await retryDocument(selectedDocument.id, session.access_token);
+                          const refreshed = await getDocument(selectedDocument.id, session.access_token);
+                          setSelectedDocument(refreshed.document);
+                          const history = await getProcessingHistory(selectedDocument.id, session.access_token);
+                          setProcessingHistory(history.history ?? []);
+                          await refreshDocuments(session.access_token);
+                          setMessage("Document retry completed.");
+                        } catch (err) {
+                          setError(err instanceof Error ? err.message : "Unable to retry document.");
+                        } finally {
+                          setRetrying(false);
+                        }
+                      }}
+                      disabled={retrying}
+                    >
+                      {retrying ? "Retrying…" : "Retry"}
+                    </Button>
+                  }
+                >
+                  {selectedDocument.error_message || "Processing failed. You can retry this document."}
+                </Alert>
+              )}
+
+              {selectedDocument.status === "processing" && (
+                <Alert severity="info">
+                  This document is currently being processed.
+                  <LinearProgress sx={{ mt: 1 }} />
+                </Alert>
+              )}
+
               <Box>
                 <Typography variant="subtitle1" fontWeight={800}>
                   Summary
@@ -1073,6 +1128,44 @@ function App() {
                     </Paper>
                   </Box>
                 )}
+
+              <Box>
+                <Typography variant="subtitle1" fontWeight={800}>
+                  Processing history
+                </Typography>
+                {loadingHistory ? (
+                  <LinearProgress sx={{ mt: 1 }} />
+                ) : processingHistory.length === 0 ? (
+                  <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
+                    No processing attempts recorded.
+                  </Typography>
+                ) : (
+                  <Stack spacing={1} sx={{ mt: 1 }}>
+                    {processingHistory.map((job) => (
+                      <Paper key={job.id} variant="outlined" sx={{ p: 1.5 }}>
+                        <Stack direction={{ xs: "column", sm: "row" }} spacing={1} alignItems={{ sm: "center" }}>
+                          <Chip
+                            size="small"
+                            label={job.status}
+                            color={job.status === "completed" ? "success" : job.status === "failed" ? "error" : "default"}
+                          />
+                          <Typography variant="body2" sx={{ flexGrow: 1 }}>
+                            {job.stage || "processing"} · attempt {job.attempt || 1}
+                          </Typography>
+                          <Typography variant="caption" color="text.secondary">
+                            {formatDate(job.created_at)}
+                          </Typography>
+                        </Stack>
+                        {job.error && (
+                          <Typography variant="caption" color="error" sx={{ display: "block", mt: 0.75 }}>
+                            {job.error}
+                          </Typography>
+                        )}
+                      </Paper>
+                    ))}
+                  </Stack>
+                )}
+              </Box>
 
               <Box>
                 <Typography variant="subtitle1" fontWeight={800}>
