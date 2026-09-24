@@ -4,6 +4,7 @@ from fastapi.responses import JSONResponse
 
 from .api.router import api_router
 from .core.config import get_settings
+from .services.ocr import UnconfiguredOCRProvider, get_ocr_provider
 
 settings = get_settings()
 
@@ -73,9 +74,15 @@ def health():
 
 @app.get("/api/v1/health")
 def api_health():
+    ocr = get_ocr_provider()
     return {
         "status": "ok",
         "service": "ai-document-processing",
         "version": "0.1.0",
         "env": settings.app_env,
+        "capabilities": {
+            "ocr": not isinstance(ocr, UnconfiguredOCRProvider),
+            "ai": bool(settings.openai_api_key),
+            "max_upload_size_mb": settings.max_upload_size_mb,
+        },
     }
