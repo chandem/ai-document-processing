@@ -33,6 +33,8 @@ def _heuristic_classify(text: str) -> tuple[str, float]:
 
 def _heuristic_summary(text: str, max_sentences: int = 5) -> str:
     cleaned = re.sub(r"\s+", " ", text).strip()
+    if len(cleaned) > 50000:
+        cleaned = cleaned[:50000]
     if not cleaned:
         return "No text was available to summarize."
 
