@@ -1,87 +1,86 @@
 # API Reference
 
 Base URL (local): `http://localhost:8000`  
-Versioned routes: `/api/v1/...`
-
-Interactive docs: `/docs` (Swagger) and `/redoc`
+Versioned routes: `/api/v1/...`  
+Interactive docs: `/docs`
 
 ---
 
 ## Health
 
-### `GET /health`
-### `GET /api/v1/health`
+- `GET /health`
+- `GET /api/v1/health` — includes `capabilities.ocr`, `capabilities.ai`
+
+---
+
+## Usage (free tier)
+
+### `GET /api/v1/documents/usage` 🔒
 
 ```json
 {
-  "status": "ok",
-  "service": "ai-document-processing",
-  "version": "0.1.0",
-  "env": "development",
-  "capabilities": {
-    "ocr": true,
-    "ai": true,
-    "max_upload_size_mb": 20
+  "day": "2026-09-24",
+  "uploads": 3,
+  "asks": 12,
+  "exports": 1,
+  "limits": {
+    "uploads_per_day": 50,
+    "asks_per_day": 100,
+    "exports_per_day": 50
   }
 }
 ```
 
-(`capabilities` is present on `/api/v1/health`.)
+Exceeding a limit returns **429**.
 
 ---
 
 ## Documents
 
-Authenticated routes require:
+Auth header for 🔒 routes: `Authorization: Bearer <supabase_access_token>`
 
-```http
-Authorization: Bearer <supabase_access_token>
+| Method | Path | Auth | Notes |
+|--------|------|------|-------|
+| POST | `/documents/upload` | No | Extract text |
+| POST | `/documents/analyze` | No | Classify + summarize |
+| POST | `/documents/ask` | No | Upload + ask (+ citations) |
+| POST | `/documents/persist` | Yes | Queue background analysis |
+| GET | `/documents` | Yes | List |
+| GET | `/documents/export.csv` | Yes | CSV of all docs (Excel-friendly) |
+| GET | `/documents/{id}` | Yes | Detail |
+| GET | `/documents/{id}/history` | Yes | Processing jobs |
+| GET | `/documents/{id}/conversations` | Yes | Q&A threads |
+| GET | `/documents/{id}/conversations/{cid}/messages` | Yes | Messages + citations |
+| POST | `/documents/{id}/ask` | Yes | Q&A with citations + optional history |
+| POST | `/documents/{id}/retry` | Yes | Retry failed |
+| GET | `/documents/{id}/export` | Yes | JSON download |
+| GET | `/documents/{id}/export.csv` | Yes | CSV download |
+| DELETE | `/documents/{id}` | Yes | Delete |
+
+### Ask body (persisted document)
+
+```json
+{
+  "question": "What is the total due?",
+  "conversation_id": null,
+  "save_history": true
+}
 ```
 
-### `POST /api/v1/documents/upload`
+### Ask response
 
-Extract text only (no auth). Multipart field: `file`.
-
-### `POST /api/v1/documents/analyze`
-
-Classify + summarize (+ optional `structured_data`). Multipart: `file`.
-
-### `POST /api/v1/documents/ask`
-
-Upload + ask in one request. Multipart: `file`, `question`.
-
-### `POST /api/v1/documents/persist` 🔒
-
-Store file, extract text, queue background AI analysis.  
-Returns immediately with `status: "processing"`. Poll list/detail until `completed` or `failed`.
-
-### `GET /api/v1/documents` 🔒
-
-List the current user’s documents (newest first). Includes `status`, `error_message`, `retry_count`, `structured_data`.
-
-### `GET /api/v1/documents/{id}` 🔒
-
-Full detail including `extracted_text`.
-
-### `GET /api/v1/documents/{id}/history` 🔒
-
-Processing job history (`stage`, `status`, `attempt`, `error_message`, timestamps).
-
-### `POST /api/v1/documents/{id}/retry` 🔒
-
-Re-run analysis for a **failed** document (409 if not failed).
-
-### `POST /api/v1/documents/{id}/ask` 🔒
-
-Q&A against stored text. Returns 409 if still `processing`.
-
-### `GET /api/v1/documents/{id}/export` 🔒
-
-Download analysis JSON (`Content-Disposition: attachment`).
-
-### `DELETE /api/v1/documents/{id}` 🔒
-
-Delete DB row (jobs cascade) and storage object.
+```json
+{
+  "document_id": "...",
+  "question": "What is the total due?",
+  "answer": "The total amount due is 1,250 USD.",
+  "citations": [
+    { "index": 1, "snippet": "The total amount due is 1250 USD.", "score": 2.0 }
+  ],
+  "conversation_id": "...",
+  "source": "llm"
+}
+```
 
 ---
 
@@ -89,18 +88,10 @@ Delete DB row (jobs cascade) and storage object.
 
 | Status | Meaning |
 |--------|---------|
-| 400 | Bad request |
-| 401 | Missing/invalid Bearer token |
-| 404 | Document not found |
-| 409 | Conflict (e.g. retry only when failed; Q&A while processing) |
-| 413 | File or extracted text too large |
-| 422 | Unsupported type / OCR/processing failure |
+| 401 | Auth required / invalid token |
+| 404 | Not found |
+| 409 | Conflict (still processing / retry only when failed) |
+| 413 | File or text too large |
+| 422 | Processing failure |
+| 429 | Daily free-tier quota exceeded |
 | 503 | Supabase not configured |
-| 500 | Unexpected server error |
-
----
-
-## Supported upload types
-
-PDF, DOCX, TXT, MD, CSV, JSON, PNG, JPG, JPEG, TIFF, WEBP, BMP  
-(Scanned PDFs and images use Tesseract when available.)
