@@ -1,6 +1,7 @@
 # Data Model
 
-Schema source of truth: [`supabase/schema.sql`](../supabase/schema.sql)
+Schema source of truth: [`supabase/schema.sql`](../supabase/schema.sql)  
+Incremental changes: [`supabase/migrations/`](../supabase/migrations/)
 
 ## Tables
 
@@ -19,30 +20,39 @@ Schema source of truth: [`supabase/schema.sql`](../supabase/schema.sql)
 | `category` | text | invoice, receipt, contract, … |
 | `classification_confidence` | numeric(4,3) | 0–1 |
 | `summary` | text | LLM or extractive summary |
-| `created_at` / `updated_at` | timestamptz | Defaults `now()` |
+| `structured_data` | jsonb | Optional LLM field extraction |
+| `error_message` | text | Set when `status = failed` |
+| `retry_count` | integer | Default 0 |
+| `processed_at` | timestamptz | When analysis finished |
+| `created_at` / `updated_at` | timestamptz | `updated_at` via trigger |
 
 **RLS:** users can only CRUD their own rows (`auth.uid() = user_id`).
 
 ### `processing_jobs`
 
-Optional job tracking for async pipelines.
-
-| Column | Type |
-|--------|------|
-| `id` | uuid PK |
-| `document_id` | uuid FK → documents |
-| `user_id` | uuid FK → auth.users |
-| `stage` | text |
-| `status` | queued \| running \| completed \| failed |
-| `error_message` | text |
-| `started_at` / `completed_at` / `created_at` | timestamptz |
+| Column | Type | Notes |
+|--------|------|--------|
+| `id` | uuid PK | |
+| `document_id` | uuid FK | Cascade on document delete |
+| `user_id` | uuid FK | |
+| `stage` | text | e.g. `analysis`, `analyzing`, `completed`, `failed` |
+| `status` | text | `queued` \| `processing` \| `running` \| `completed` \| `failed` |
+| `attempt` | integer | Default 1 |
+| `error_message` | text | Safe user-facing error |
+| `started_at` / `completed_at` | timestamptz | |
+| `created_at` / `updated_at` | timestamptz | |
 
 ## Storage
 
 - Bucket name: **`documents`** (private)
 - Object key pattern: `{user_id}/{document_id}/{filename}`
 
+## Apply schema
+
+1. Run `schema.sql` on a fresh project, **or**
+2. On an existing project, apply migrations in order under `supabase/migrations/`.
+
 ## Planned extensions
 
-- `extracted_fields` — structured JSON fields per document
 - `conversations` / `messages` — multi-turn Q&A history with citations
+- Usage / quota tables for SaaS limits
