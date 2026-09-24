@@ -32,7 +32,6 @@ import CheckCircleOutlineIcon from "@mui/icons-material/CheckCircleOutline";
 import TableChartOutlinedIcon from "@mui/icons-material/TableChartOutlined";
 import ErrorOutlineIcon from "@mui/icons-material/ErrorOutline";
 import PhotoCameraOutlinedIcon from "@mui/icons-material/PhotoCameraOutlined";
-import type { SvgIconComponent } from "@mui/icons-material";
 import { supabase, isSupabaseConfigured } from "./services/supabase";
 import {
   askDocument,
@@ -473,13 +472,13 @@ export default function App() {
           <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr 1fr", md: "repeat(5, 1fr)" }, gap: 2 }}>
             {(
               [
-                { label: "Documents", value: stats.total, Icon: DescriptionOutlinedIcon },
-                { label: "Completed", value: stats.completed, Icon: CheckCircleOutlineIcon },
-                { label: "Processing", value: stats.processing, Icon: AutoAwesomeOutlinedIcon },
-                { label: "Failed", value: stats.failed, Icon: ErrorOutlineIcon },
-                { label: "Storage", value: formatBytes(stats.size), Icon: ArticleOutlinedIcon },
-              ] as { label: string; value: string | number; Icon: SvgIconComponent }[]
-            ).map(({ label, value, Icon }) => (
+                { label: "Documents", value: stats.total, icon: <DescriptionOutlinedIcon color="primary" /> },
+                { label: "Completed", value: stats.completed, icon: <CheckCircleOutlineIcon color="primary" /> },
+                { label: "Processing", value: stats.processing, icon: <AutoAwesomeOutlinedIcon color="primary" /> },
+                { label: "Failed", value: stats.failed, icon: <ErrorOutlineIcon color="primary" /> },
+                { label: "Storage", value: formatBytes(stats.size), icon: <ArticleOutlinedIcon color="primary" /> },
+              ]
+            ).map(({ label, value, icon }) => (
               <Card key={label} elevation={0} sx={{ border: "1px solid #e1e7ef", borderRadius: 3 }}>
                 <CardContent>
                   <Stack direction="row" justifyContent="space-between" alignItems="center">
@@ -487,7 +486,7 @@ export default function App() {
                       <Typography variant="body2" color="text.secondary">{label}</Typography>
                       <Typography variant="h5" fontWeight={800} sx={{ mt: 0.5 }}>{value}</Typography>
                     </Box>
-                    <Icon color="primary" />
+                    {icon}
                   </Stack>
                 </CardContent>
               </Card>
