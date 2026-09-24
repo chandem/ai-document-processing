@@ -184,6 +184,31 @@ function App() {
     }
   }, [session, mode, refreshDocuments]);
 
+  useEffect(() => {
+    if (!session || mode === "reset") return;
+    const hasProcessing = documents.some((doc) => doc.status === "processing");
+    if (!hasProcessing) return;
+
+    const timer = window.setInterval(async () => {
+      await refreshDocuments(session.access_token);
+      if (selectedDocument?.status === "processing") {
+        try {
+          const refreshed = await getDocument(selectedDocument.id, session.access_token);
+          setSelectedDocument(refreshed.document);
+          const history = await getProcessingHistory(
+            selectedDocument.id,
+            session.access_token,
+          );
+          setProcessingHistory(history.history ?? []);
+        } catch {
+          // Keep the current document view; the next poll will retry.
+        }
+      }
+    }, 4000);
+
+    return () => window.clearInterval(timer);
+  }, [session, mode, documents, selectedDocument, refreshDocuments]);
+
   async function handleAuth() {
     setError("");
     setMessage("");
