@@ -106,7 +106,7 @@ async function pagesToPdf(pages: Page[]): Promise<Blob> {
   const xrefOffset = offset;
   const xref = [`xref\n0 ${finalObjects.length + 1}\n0000000000 65535 f \n`];
   for (let i = 1; i <= finalObjects.length; i++) {
-    xref.push(`${String(offsets[i]).padStart(10, "0")} 00000 n \\n`);
+    xref.push(`${String(offsets[i]).padStart(10, "0")} 00000 n ` + "\n");
   }
 
   const trailer = `trailer\n<< /Size ${finalObjects.length + 1} /Root 1 0 R >>\nstartxref\n${xrefOffset}\n%%EOF\n`;
