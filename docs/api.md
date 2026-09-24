@@ -13,14 +13,26 @@ Interactive docs: `/docs` (Swagger) and `/redoc`
 ### `GET /api/v1/health`
 
 ```json
-{ "status": "ok", "service": "ai-document-processing", "version": "0.1.0", "env": "development" }
+{
+  "status": "ok",
+  "service": "ai-document-processing",
+  "version": "0.1.0",
+  "env": "development",
+  "capabilities": {
+    "ocr": true,
+    "ai": true,
+    "max_upload_size_mb": 20
+  }
+}
 ```
+
+(`capabilities` is present on `/api/v1/health`.)
 
 ---
 
 ## Documents
 
-All authenticated routes require:
+Authenticated routes require:
 
 ```http
 Authorization: Bearer <supabase_access_token>
@@ -28,79 +40,48 @@ Authorization: Bearer <supabase_access_token>
 
 ### `POST /api/v1/documents/upload`
 
-Extract text only (no auth). Multipart form field: `file`.
-
-**Response**
-
-```json
-{
-  "filename": "invoice.pdf",
-  "content_type": "application/pdf",
-  "status": "completed",
-  "text": "...",
-  "character_count": 1234,
-  "word_count": 200,
-  "created_at": "2026-09-22T12:00:00Z"
-}
-```
+Extract text only (no auth). Multipart field: `file`.
 
 ### `POST /api/v1/documents/analyze`
 
-Classify + summarize (no auth). Multipart: `file`.
-
-```json
-{
-  "filename": "invoice.pdf",
-  "status": "completed",
-  "category": "invoice",
-  "confidence": 0.91,
-  "summary": "..."
-}
-```
+Classify + summarize (+ optional `structured_data`). Multipart: `file`.
 
 ### `POST /api/v1/documents/ask`
 
-Upload + ask in one request (no auth). Multipart: `file`, `question`.
-
-```json
-{ "question": "What is the total?", "answer": "..." }
-```
+Upload + ask in one request. Multipart: `file`, `question`.
 
 ### `POST /api/v1/documents/persist` 🔒
 
-Store file in Supabase Storage, run full analysis, save metadata.
-
-Multipart: `file` + Bearer token.
+Store file, extract text, queue background AI analysis.  
+Returns immediately with `status: "processing"`. Poll list/detail until `completed` or `failed`.
 
 ### `GET /api/v1/documents` 🔒
 
-List the current user’s documents (newest first).
+List the current user’s documents (newest first). Includes `status`, `error_message`, `retry_count`, `structured_data`.
 
 ### `GET /api/v1/documents/{id}` 🔒
 
-Document detail including `extracted_text` and `summary`.
+Full detail including `extracted_text`.
+
+### `GET /api/v1/documents/{id}/history` 🔒
+
+Processing job history (`stage`, `status`, `attempt`, `error_message`, timestamps).
+
+### `POST /api/v1/documents/{id}/retry` 🔒
+
+Re-run analysis for a **failed** document (409 if not failed).
 
 ### `POST /api/v1/documents/{id}/ask` 🔒
 
-```json
-{ "question": "Who is the vendor?" }
-```
-
-```json
-{
-  "document_id": "...",
-  "question": "Who is the vendor?",
-  "answer": "Acme Corp"
-}
-```
+Q&A against stored text. Returns 409 if still `processing`.
 
 ### `GET /api/v1/documents/{id}/export` 🔒
 
-Download analysis as JSON (`Content-Disposition: attachment`).
+Download analysis JSON (`Content-Disposition: attachment`).
 
 ### `DELETE /api/v1/documents/{id}` 🔒
 
-Delete DB row and storage object.
+Delete DB row (jobs cascade) and storage object.
 
 ---
 
@@ -108,19 +89,14 @@ Delete DB row and storage object.
 
 | Status | Meaning |
 |--------|---------|
-| 400 | Bad request (missing filename, empty question) |
+| 400 | Bad request |
 | 401 | Missing/invalid Bearer token |
 | 404 | Document not found |
-| 413 | File too large |
+| 409 | Conflict (e.g. retry only when failed; Q&A while processing) |
+| 413 | File or extracted text too large |
 | 422 | Unsupported type / OCR/processing failure |
 | 503 | Supabase not configured |
-| 500 | Unexpected server error (detail includes exception type) |
-
-Example:
-
-```json
-{ "detail": "Supabase is not configured. Set SUPABASE_URL on the backend." }
-```
+| 500 | Unexpected server error |
 
 ---
 
