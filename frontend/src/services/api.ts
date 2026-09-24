@@ -3,8 +3,13 @@ const API_BASE_URL =
   import.meta.env.VITE_API_URL ||
   "/api/v1"; // relative path works with Vite proxy in dev and same-origin deploys
 
+const DEFAULT_TIMEOUT_MS = 60_000;
+
 function networkErrorMessage(err: unknown): string {
   const msg = err instanceof Error ? err.message : String(err);
+  if (msg.includes("AbortError") || msg.toLowerCase().includes("aborted")) {
+    return "Request timed out. The API may be slow or unreachable — try again.";
+  }
   if (
     msg === "Failed to fetch" ||
     msg.includes("NetworkError") ||
@@ -23,14 +28,25 @@ function buildUrl(path: string) {
   return `${API_BASE_URL.replace(/\/$/, "")}${path.startsWith("/") ? path : `/${path}`}`;
 }
 
-async function apiRequest(path: string, options: RequestInit = {}) {
+async function apiRequest(
+  path: string,
+  options: RequestInit = {},
+  timeoutMs = DEFAULT_TIMEOUT_MS,
+) {
   const url = buildUrl(path);
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
 
   let response: Response;
   try {
-    response = await fetch(url, options);
+    response = await fetch(url, {
+      ...options,
+      signal: controller.signal,
+    });
   } catch (err) {
     throw new Error(networkErrorMessage(err));
+  } finally {
+    clearTimeout(timer);
   }
 
   if (!response.ok) {
@@ -54,20 +70,25 @@ async function apiRequest(path: string, options: RequestInit = {}) {
 }
 
 export async function healthCheck() {
-  return apiRequest("/health");
+  return apiRequest("/health", {}, 10_000);
 }
 
 export async function uploadDocument(file: File, accessToken: string) {
   const formData = new FormData();
   formData.append("file", file);
 
-  return apiRequest("/documents/persist", {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
+  // Persist can take longer (OCR + queue); allow 2 minutes
+  return apiRequest(
+    "/documents/persist",
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+      },
+      body: formData,
     },
-    body: formData,
-  });
+    120_000,
+  );
 }
 
 export async function listDocuments(accessToken: string) {
@@ -100,24 +121,32 @@ export async function askDocument(
   question: string,
   accessToken: string,
 ) {
-  return apiRequest(`/documents/${documentId}/ask`, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-      "Content-Type": "application/json",
+  return apiRequest(
+    `/documents/${documentId}/ask`,
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ question }),
     },
-    body: JSON.stringify({ question }),
-  });
+    90_000,
+  );
 }
 
 export async function analyzeDocument(file: File) {
   const formData = new FormData();
   formData.append("file", file);
 
-  return apiRequest("/documents/analyze", {
-    method: "POST",
-    body: formData,
-  });
+  return apiRequest(
+    "/documents/analyze",
+    {
+      method: "POST",
+      body: formData,
+    },
+    120_000,
+  );
 }
 
 /** Trigger a browser download of the document export JSON. */
@@ -127,13 +156,19 @@ export async function exportDocument(
   suggestedName = "document-export.json",
 ) {
   const url = buildUrl(`/documents/${documentId}/export`);
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), DEFAULT_TIMEOUT_MS);
+
   let response: Response;
   try {
     response = await fetch(url, {
       headers: { Authorization: `Bearer ${accessToken}` },
+      signal: controller.signal,
     });
   } catch (err) {
     throw new Error(networkErrorMessage(err));
+  } finally {
+    clearTimeout(timer);
   }
 
   if (!response.ok) {
@@ -162,15 +197,22 @@ export function getApiBaseUrl() {
   return API_BASE_URL;
 }
 
-export async function getProcessingHistory(documentId: string, accessToken: string) {
+export async function getProcessingHistory(
+  documentId: string,
+  accessToken: string,
+) {
   return apiRequest(`/documents/${documentId}/history`, {
     headers: { Authorization: `Bearer ${accessToken}` },
   });
 }
 
 export async function retryDocument(documentId: string, accessToken: string) {
-  return apiRequest(`/documents/${documentId}/retry`, {
-    method: "POST",
-    headers: { Authorization: `Bearer ${accessToken}` },
-  });
+  return apiRequest(
+    `/documents/${documentId}/retry`,
+    {
+      method: "POST",
+      headers: { Authorization: `Bearer ${accessToken}` },
+    },
+    120_000,
+  );
 }
