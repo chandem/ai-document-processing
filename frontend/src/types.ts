@@ -26,16 +26,39 @@ export interface ProcessingJob {
   status: "queued" | "processing" | "running" | "completed" | "failed";
   attempt?: number;
   error_message?: string | null;
-  /** @deprecated prefer error_message */
   error?: string | null;
   created_at?: string;
   updated_at?: string;
+}
+
+export interface Citation {
+  index: number;
+  snippet: string;
+  score?: number;
 }
 
 export interface AskResponse {
   document_id?: string;
   question: string;
   answer: string;
+  citations?: Citation[];
+  conversation_id?: string | null;
+  source?: string;
+}
+
+export interface Conversation {
+  id: string;
+  title?: string;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface Message {
+  id: string;
+  role: "user" | "assistant";
+  content: string;
+  citations?: Citation[] | null;
+  created_at?: string;
 }
 
 export interface AnalyzeResponse {
@@ -45,6 +68,19 @@ export interface AnalyzeResponse {
   confidence: number;
   summary: string;
   structured_data?: Record<string, unknown> | null;
+}
+
+export interface UsageSnapshot {
+  day: string;
+  uploads: number;
+  asks: number;
+  exports: number;
+  limits: {
+    uploads_per_day: number;
+    asks_per_day: number;
+    exports_per_day: number;
+  };
+  checked_at?: string;
 }
 
 export interface HealthCapabilities {
