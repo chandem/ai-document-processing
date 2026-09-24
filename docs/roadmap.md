@@ -35,6 +35,7 @@
 - [x] Confidence and source references (heuristic + LLM)
 - [x] Question answering over a document (API + UI)
 - [x] Structured data returned in API + UI
+- [x] Source citations / snippets with answers
 
 ## Phase 4 — AI workspace
 - [x] Document dashboard (basic)
@@ -44,19 +45,20 @@
 - [x] Retry failed documents from UI
 - [x] Document search / filter controls
 - [x] JSON export
-- [ ] Conversation history
-- [ ] Citations / source snippets
+- [x] CSV export (list + single document)
+- [x] Conversation history (API + persistence)
+- [ ] Rich multi-turn conversation UI polish
 - [ ] Human correction workflow
 
 ## Phase 5 — SaaS
 - [x] Supabase Auth (email/password + recovery)
-- [ ] Usage tracking
-- [ ] Free/pro limits
+- [x] Usage tracking (in-memory quotas + usage_events table)
+- [x] Free-tier daily limits (uploads / asks / exports)
 - [ ] Payments/subscriptions
 - [ ] Team workspaces
 - [ ] API keys
-- [ ] Public API rate limiting
-- [ ] CSV / Excel export
+- [ ] Public API rate limiting (IP / edge)
+- [ ] Native Excel (.xlsx) export
 
 ## Deployment
 - [x] Render configuration
