@@ -256,6 +256,44 @@ export async function exportDocumentsCsv(
   return downloadBlob("/documents/export.csv", accessToken, suggestedName);
 }
 
+export async function exportDocumentXlsx(
+  documentId: string,
+  accessToken: string,
+  suggestedName = "document-export.xlsx",
+) {
+  return downloadBlob(
+    `/documents/${documentId}/export.xlsx`,
+    accessToken,
+    suggestedName,
+  );
+}
+
+export async function exportDocumentsXlsx(
+  accessToken: string,
+  suggestedName = "documents-export.xlsx",
+) {
+  return downloadBlob("/documents/export.xlsx", accessToken, suggestedName);
+}
+
+export async function correctDocument(
+  documentId: string,
+  accessToken: string,
+  body: {
+    category?: string | null;
+    summary?: string | null;
+    structured_data?: Record<string, unknown> | null;
+  },
+) {
+  return apiRequest(`/documents/${documentId}`, {
+    method: "PATCH",
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(body),
+  });
+}
+
 export function getApiBaseUrl() {
   return API_BASE_URL;
 }
