@@ -112,7 +112,11 @@ async function pagesToPdf(pages: Page[]): Promise<Blob> {
   const trailer = `trailer\n<< /Size ${finalObjects.length + 1} /Root 1 0 R >>\nstartxref\n${xrefOffset}\n%%EOF\n`;
   chunks.push(encoder.encode(xref.join("") + trailer));
 
-  return new Blob(chunks, { type: "application/pdf" });
+  // Copy into a fresh ArrayBuffer so BlobPart typing is satisfied (TS 5.9+)
+  const bytes = concatBytes(chunks);
+  const ab = new ArrayBuffer(bytes.byteLength);
+  new Uint8Array(ab).set(bytes);
+  return new Blob([ab], { type: "application/pdf" });
 }
 
 function concatBytes(parts: Uint8Array[]): Uint8Array {
