@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import {
   Box,
   Button,
@@ -19,6 +20,8 @@ import DownloadOutlinedIcon from "@mui/icons-material/DownloadOutlined";
 import HistoryOutlinedIcon from "@mui/icons-material/HistoryOutlined";
 import QuestionAnswerOutlinedIcon from "@mui/icons-material/QuestionAnswerOutlined";
 import TableChartOutlinedIcon from "@mui/icons-material/TableChartOutlined";
+import OpenInNewOutlinedIcon from "@mui/icons-material/OpenInNewOutlined";
+import EditOutlinedIcon from "@mui/icons-material/EditOutlined";
 import type { Citation, Message } from "../types";
 
 function formatBytes(bytes = 0) {
@@ -38,15 +41,28 @@ type Props = {
   exporting: boolean;
   processingHistory: any[];
   loadingHistory: boolean;
+  previewUrl?: string | null;
+  openingOriginal?: boolean;
+  correcting?: boolean;
   onQuestionChange: (value: string) => void;
   onAsk: () => void;
   onClose: () => void;
   onDelete: (id: string) => void;
   onExportJson: (id: string, filename?: string) => void;
   onExportCsv: (id: string, filename?: string) => void;
+  onExportXlsx?: (id: string, filename?: string) => void;
   onCopyAnswer: () => void;
   onRetry?: (id: string) => void;
   retrying?: boolean;
+  onOpenOriginal?: (id: string) => void;
+  onCorrect?: (
+    id: string,
+    payload: {
+      category?: string;
+      summary?: string;
+      structured_data?: Record<string, unknown>;
+    },
+  ) => void | Promise<void>;
 };
 
 export default function DocumentDialog({
@@ -60,24 +76,85 @@ export default function DocumentDialog({
   exporting,
   processingHistory,
   loadingHistory,
+  previewUrl,
+  openingOriginal,
+  correcting,
   onQuestionChange,
   onAsk,
   onClose,
   onDelete,
   onExportJson,
   onExportCsv,
+  onExportXlsx,
   onCopyAnswer,
   onRetry,
   retrying,
+  onOpenOriginal,
+  onCorrect,
 }: Props) {
+  const [editMode, setEditMode] = useState(false);
+  const [editCategory, setEditCategory] = useState("");
+  const [editSummary, setEditSummary] = useState("");
+  const [editStructured, setEditStructured] = useState("");
+  const [editError, setEditError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!selectedDocument) return;
+    setEditMode(false);
+    setEditError(null);
+    setEditCategory(selectedDocument.category || "");
+    setEditSummary(selectedDocument.summary || "");
+    setEditStructured(
+      selectedDocument.structured_data
+        ? JSON.stringify(selectedDocument.structured_data, null, 2)
+        : "",
+    );
+  }, [selectedDocument?.id]);
+
   if (!selectedDocument) return null;
 
+  const contentType = String(selectedDocument.content_type || "").toLowerCase();
+  const filename = String(selectedDocument.filename || "").toLowerCase();
+  const isImage =
+    contentType.startsWith("image/") ||
+    /\.(png|jpe?g|gif|webp|bmp|tiff?)$/i.test(filename);
+  const isPdf = contentType.includes("pdf") || filename.endsWith(".pdf");
+  const isText =
+    contentType.startsWith("text/") ||
+    /\.(txt|md|csv|json)$/i.test(filename);
+
+  async function handleSaveCorrection() {
+    if (!onCorrect) return;
+    setEditError(null);
+    let structured: Record<string, unknown> | undefined;
+    if (editStructured.trim()) {
+      try {
+        structured = JSON.parse(editStructured);
+        if (typeof structured !== "object" || structured === null || Array.isArray(structured)) {
+          setEditError("Structured data must be a JSON object.");
+          return;
+        }
+      } catch {
+        setEditError("Structured data is not valid JSON.");
+        return;
+      }
+    } else {
+      structured = {};
+    }
+    await onCorrect(selectedDocument.id, {
+      category: editCategory,
+      summary: editSummary,
+      structured_data: structured,
+    });
+    setEditMode(false);
+  }
+
   return (
-    <Dialog open={Boolean(selectedDocument)} onClose={onClose} fullWidth maxWidth="md">
+    <Dialog open={Boolean(selectedDocument)} onClose={onClose} fullWidth maxWidth="lg">
       <DialogTitle sx={{ fontWeight: 800 }}>{selectedDocument.filename}</DialogTitle>
       <DialogContent dividers>
         <Stack spacing={2.5}>
-          <Stack direction="row" spacing={1} flexWrap="wrap">
+          <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
             <Chip label={selectedDocument.category || "other"} />
             <Chip
               label={selectedDocument.status}
@@ -96,6 +173,30 @@ export default function DocumentDialog({
                 variant="outlined"
               />
             )}
+            {onOpenOriginal && (
+              <Button
+                size="small"
+                variant="outlined"
+                startIcon={<OpenInNewOutlinedIcon />}
+                disabled={openingOriginal}
+                onClick={() => onOpenOriginal(selectedDocument.id)}
+              >
+                {openingOriginal ? "Opening…" : "Original"}
+              </Button>
+            )}
+            {onCorrect && (
+              <Button
+                size="small"
+                variant={editMode ? "contained" : "outlined"}
+                startIcon={<EditOutlinedIcon />}
+                onClick={() => {
+                  setEditMode((v) => !v);
+                  setEditError(null);
+                }}
+              >
+                {editMode ? "Cancel edit" : "Correct"}
+              </Button>
+            )}
           </Stack>
 
           {selectedDocument.error_message && (
@@ -104,14 +205,97 @@ export default function DocumentDialog({
             </Typography>
           )}
 
-          <Box>
-            <Typography variant="subtitle1" fontWeight={800}>
-              Summary
-            </Typography>
-            <Typography color="text.secondary" sx={{ mt: 0.5 }}>
-              {selectedDocument.summary || "No summary available."}
-            </Typography>
-          </Box>
+          {previewUrl && (isImage || isPdf || isText) && (
+            <Box>
+              <Typography variant="subtitle1" fontWeight={800}>
+                Original preview
+              </Typography>
+              <Paper
+                variant="outlined"
+                sx={{ mt: 1, p: 1, maxHeight: 360, overflow: "auto", bgcolor: "#fafafa" }}
+              >
+                {isImage && (
+                  <Box
+                    component="img"
+                    src={previewUrl}
+                    alt={selectedDocument.filename}
+                    sx={{ maxWidth: "100%", maxHeight: 320, display: "block", mx: "auto" }}
+                  />
+                )}
+                {isPdf && (
+                  <Box
+                    component="iframe"
+                    src={previewUrl}
+                    title={selectedDocument.filename}
+                    sx={{ width: "100%", height: 320, border: 0 }}
+                  />
+                )}
+                {isText && !isImage && !isPdf && (
+                  <Typography variant="body2" component="a" href={previewUrl} target="_blank" rel="noreferrer">
+                    Open text file in new tab
+                  </Typography>
+                )}
+              </Paper>
+            </Box>
+          )}
+
+          {editMode ? (
+            <Box>
+              <Typography variant="subtitle1" fontWeight={800} sx={{ mb: 1 }}>
+                Human correction
+              </Typography>
+              <Stack spacing={1.5}>
+                <TextField
+                  label="Category"
+                  size="small"
+                  fullWidth
+                  value={editCategory}
+                  onChange={(e) => setEditCategory(e.target.value)}
+                />
+                <TextField
+                  label="Summary"
+                  size="small"
+                  fullWidth
+                  multiline
+                  minRows={3}
+                  value={editSummary}
+                  onChange={(e) => setEditSummary(e.target.value)}
+                />
+                <TextField
+                  label="Structured data (JSON object)"
+                  size="small"
+                  fullWidth
+                  multiline
+                  minRows={4}
+                  value={editStructured}
+                  onChange={(e) => setEditStructured(e.target.value)}
+                  sx={{ fontFamily: "monospace" }}
+                />
+                {editError && (
+                  <Typography color="error" variant="body2">
+                    {editError}
+                  </Typography>
+                )}
+                <Button
+                  variant="contained"
+                  disabled={correcting}
+                  onClick={() => void handleSaveCorrection()}
+                  sx={{ alignSelf: "flex-start" }}
+                >
+                  {correcting ? "Saving…" : "Save correction"}
+                </Button>
+              </Stack>
+            </Box>
+          ) : (
+            <Box>
+              <Typography variant="subtitle1" fontWeight={800}>
+                Summary
+              </Typography>
+              <Typography color="text.secondary" sx={{ mt: 0.5 }}>
+                {selectedDocument.summary || "No summary available."}
+              </Typography>
+            </Box>
+          )}
 
           <Box>
             <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 1 }}>
@@ -158,7 +342,7 @@ export default function DocumentDialog({
                                 color="text.secondary"
                                 sx={{ display: "block", pl: 1, borderLeft: "2px solid #90caf9" }}
                               >
-                                “{c.snippet}”
+                                "{c.snippet}"
                               </Typography>
                             ))}
                           </Stack>
@@ -228,7 +412,8 @@ export default function DocumentDialog({
             )}
           </Box>
 
-          {selectedDocument.structured_data &&
+          {!editMode &&
+            selectedDocument.structured_data &&
             typeof selectedDocument.structured_data === "object" &&
             Object.keys(selectedDocument.structured_data).length > 0 && (
               <Box>
@@ -326,7 +511,7 @@ export default function DocumentDialog({
           </Box>
         </Stack>
       </DialogContent>
-      <DialogActions>
+      <DialogActions sx={{ flexWrap: "wrap", gap: 1 }}>
         <Button onClick={onClose}>Close</Button>
         <Button
           startIcon={<DownloadOutlinedIcon />}
@@ -341,6 +526,15 @@ export default function DocumentDialog({
         >
           CSV
         </Button>
+        {onExportXlsx && (
+          <Button
+            startIcon={<TableChartOutlinedIcon />}
+            disabled={exporting}
+            onClick={() => onExportXlsx(selectedDocument.id, selectedDocument.filename)}
+          >
+            Excel
+          </Button>
+        )}
         <Button color="error" onClick={() => onDelete(selectedDocument.id)}>
           Delete
         </Button>
