@@ -48,8 +48,8 @@
 - [x] JSON export
 - [x] CSV export (list + single document)
 - [x] Conversation history (API + persistence + UI thread)
-- [ ] Human correction workflow
-- [ ] Side-by-side original file preview
+- [x] Human correction workflow
+- [x] Side-by-side original file preview
 
 ## Phase 5 — SaaS
 - [x] Supabase Auth (email/password + recovery)
@@ -60,7 +60,7 @@
 - [ ] Team workspaces
 - [ ] API keys
 - [ ] Public API rate limiting (IP / edge)
-- [ ] Native Excel (.xlsx) export
+- [x] Native Excel (.xlsx) export
 
 ## Deployment
 - [x] Render configuration

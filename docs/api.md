@@ -55,6 +55,10 @@ Auth header for 🔒 routes: `Authorization: Bearer <supabase_access_token>`
 | POST | `/documents/{id}/retry` | Yes | Retry failed |
 | GET | `/documents/{id}/export` | Yes | JSON download |
 | GET | `/documents/{id}/export.csv` | Yes | CSV download |
+| GET | `/documents/export.xlsx` | Yes | Excel of all docs |
+| GET | `/documents/{id}/export.xlsx` | Yes | Excel download |
+| GET | `/documents/{id}/file-url` | Yes | Signed original-file URL |
+| PATCH | `/documents/{id}` | Yes | Human correction |
 | DELETE | `/documents/{id}` | Yes | Delete |
 
 ### Ask body (persisted document)
@@ -81,6 +85,20 @@ Auth header for 🔒 routes: `Authorization: Bearer <supabase_access_token>`
   "source": "llm"
 }
 ```
+
+### Correct document (human review)
+
+`PATCH /api/v1/documents/{id}`
+
+```json
+{
+  "category": "invoice",
+  "summary": "Corrected summary text",
+  "structured_data": { "total": "1250 USD" }
+}
+```
+
+All fields optional; send only what you want to change.
 
 ---
 
