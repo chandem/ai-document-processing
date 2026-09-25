@@ -508,17 +508,28 @@ export default function App() {
 
   return (
     <Box sx={{ minHeight: "100vh", bgcolor: "#f4f7fb" }}>
-      <AppBar position="sticky" elevation={0} sx={{ bgcolor: "white", color: "#182230", borderBottom: "1px solid #e5eaf0" }}>
+      <AppBar position="sticky" elevation={0} sx={{ bgcolor: "primary.main", color: "primary.contrastText" }}>
         <Toolbar>
-          <AutoAwesomeOutlinedIcon color="primary" sx={{ mr: 1 }} />
-          <Typography variant="h6" sx={{ flexGrow: 1, fontWeight: 800 }}>AI Document Processing</Typography>
+          <AutoAwesomeOutlinedIcon sx={{ mr: 1, color: "inherit" }} />
+          <Typography variant="h6" sx={{ flexGrow: 1, fontWeight: 800, color: "inherit" }}>AI Document Processing</Typography>
           {usage && (
             <Tooltip title={`Today: ${usage.uploads}/${usage.limits.uploads_per_day} uploads · ${usage.asks}/${usage.limits.asks_per_day} questions · ${usage.exports}/${usage.limits.exports_per_day} exports`}>
-              <Chip size="small" label={`Quota ${usage.uploads + usage.asks + usage.exports}`} sx={{ mr: 1, display: { xs: "none", md: "flex" } }} variant="outlined" />
+              <Chip
+                size="small"
+                label={`Quota ${usage.uploads + usage.asks + usage.exports}`}
+                sx={{
+                  mr: 1,
+                  display: { xs: "none", md: "flex" },
+                  color: "inherit",
+                  borderColor: "rgba(255,255,255,0.5)",
+                  bgcolor: "rgba(255,255,255,0.12)",
+                }}
+                variant="outlined"
+              />
             </Tooltip>
           )}
-          <Typography variant="body2" color="text.secondary" sx={{ display: { xs: "none", sm: "block" }, mr: 2 }}>{session.user.email}</Typography>
-          <Button onClick={async () => { await supabase.auth.signOut(); setSelectedDocument(null); setMessage(""); setError(""); setWarning(""); }}>Sign out</Button>
+          <Typography variant="body2" sx={{ display: { xs: "none", sm: "block" }, mr: 2, color: "rgba(255,255,255,0.85)" }}>{session.user.email}</Typography>
+          <Button color="inherit" onClick={async () => { await supabase.auth.signOut(); setSelectedDocument(null); setMessage(""); setError(""); setWarning(""); }}>Sign out</Button>
         </Toolbar>
       </AppBar>
 
