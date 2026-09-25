@@ -269,6 +269,15 @@ export async function getProcessingHistory(
   });
 }
 
+export async function getDocumentFileUrl(
+  documentId: string,
+  accessToken: string,
+) {
+  return apiRequest(`/documents/${documentId}/file-url`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+}
+
 export async function retryDocument(documentId: string, accessToken: string) {
   return apiRequest(
     `/documents/${documentId}/retry`,

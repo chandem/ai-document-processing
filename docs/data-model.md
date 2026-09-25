@@ -42,17 +42,47 @@ Incremental changes: [`supabase/migrations/`](../supabase/migrations/)
 | `started_at` / `completed_at` | timestamptz | |
 | `created_at` / `updated_at` | timestamptz | |
 
+### `conversations` (migration `20260924130000`)
+
+| Column | Type | Notes |
+|--------|------|--------|
+| `id` | uuid PK | |
+| `document_id` | uuid FK | |
+| `user_id` | uuid FK | |
+| `title` | text | Optional |
+| `created_at` / `updated_at` | timestamptz | |
+
+### `messages`
+
+| Column | Type | Notes |
+|--------|------|--------|
+| `id` | uuid PK | |
+| `conversation_id` | uuid FK | |
+| `user_id` | uuid FK | |
+| `role` | text | `user` \| `assistant` |
+| `content` | text | Question or answer |
+| `citations` | jsonb | List of `{index, snippet, score}` |
+| `created_at` | timestamptz | |
+
+### `usage_events`
+
+| Column | Type | Notes |
+|--------|------|--------|
+| `id` | uuid PK | |
+| `user_id` | uuid | |
+| `action` | text | `uploads` \| `asks` \| `exports` |
+| `document_id` | uuid | Optional |
+| `created_at` | timestamptz | Used for daily aggregation |
+
 ## Storage
 
 - Bucket name: **`documents`** (private)
 - Object key pattern: `{user_id}/{document_id}/{filename}`
+- Preview/download: backend `GET /api/v1/documents/{id}/file-url` returns a **signed URL** (default 1 hour)
 
 ## Apply schema
 
 1. Run `schema.sql` on a fresh project, **or**
 2. On an existing project, apply migrations in order under `supabase/migrations/`.
 
-## Planned extensions
-
-- `conversations` / `messages` — multi-turn Q&A history with citations
-- Usage / quota tables for SaaS limits
+See [setup-supabase.md](setup-supabase.md).
