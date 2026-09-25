@@ -22,6 +22,7 @@
 - [x] Document metadata persistence
 - [x] Document list / detail / delete
 - [x] Image upload support in frontend
+- [x] **Camera scan** (device camera, multi-page PDF, OCR enhance)
 - [x] Background processing after persist
 - [x] Processing job history + retry for failed docs
 - [x] Extracted-text size limits
@@ -43,17 +44,18 @@
 - [x] Ask questions about a document (API + UI)
 - [x] Processing status polling / history UI
 - [x] Retry failed documents from UI
-- [x] Document search / filter controls
+- [x] Document search / filter controls (category + status)
 - [x] JSON export
 - [x] CSV export (list + single document)
-- [x] Conversation history (API + persistence)
-- [ ] Rich multi-turn conversation UI polish
+- [x] Conversation history (API + persistence + UI thread)
 - [ ] Human correction workflow
+- [ ] Side-by-side original file preview
 
 ## Phase 5 — SaaS
 - [x] Supabase Auth (email/password + recovery)
 - [x] Usage tracking (in-memory quotas + usage_events table)
 - [x] Free-tier daily limits (uploads / asks / exports)
+- [x] Quota chip in UI
 - [ ] Payments/subscriptions
 - [ ] Team workspaces
 - [ ] API keys
@@ -66,5 +68,5 @@
 - [x] Docker image with Tesseract + Poppler
 - [x] Capability health endpoint (`/api/v1/health`)
 - [ ] Dedicated Supabase project (production)
-- [ ] Production environment variables
+- [ ] Production environment variables checklist
 - [ ] Production smoke tests
