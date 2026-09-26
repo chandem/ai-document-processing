@@ -221,9 +221,11 @@ async def upload_document(file: UploadFile = File(...)):
         filename=file.filename or "document",
         content_type=file.content_type,
         size_bytes=len(data),
+        status="completed",
+        text=text,
         character_count=characters,
         word_count=words,
-        extracted_text=text,
+        created_at=datetime.now(timezone.utc),
     )
 
 
@@ -235,6 +237,7 @@ async def analyze_uploaded_document(file: UploadFile = File(...)):
         filename=file.filename or "document",
         content_type=file.content_type,
         size_bytes=len(data),
+        status="completed",
         **analysis,
     )
 
