@@ -12,6 +12,7 @@ import {
   Container,
   Divider,
   IconButton,
+  InputAdornment,
   LinearProgress,
   Paper,
   Stack,
@@ -33,6 +34,7 @@ import CheckCircleOutlineIcon from "@mui/icons-material/CheckCircleOutline";
 import TableChartOutlinedIcon from "@mui/icons-material/TableChartOutlined";
 import ErrorOutlineIcon from "@mui/icons-material/ErrorOutline";
 import PhotoCameraOutlinedIcon from "@mui/icons-material/PhotoCameraOutlined";
+import ClearOutlinedIcon from "@mui/icons-material/ClearOutlined";
 import { supabase, isSupabaseConfigured } from "./services/supabase";
 import {
   askDocument,
@@ -764,8 +766,23 @@ export default function App() {
                   <Tooltip title="Refresh"><span><IconButton onClick={() => refreshDocuments()} disabled={loadingDocuments}><RefreshOutlinedIcon /></IconButton></span></Tooltip>
                 </Stack>
                 <Stack direction={{ xs: "column", sm: "row" }} spacing={1.5}>
-                  <TextField fullWidth size="small" placeholder="Search…" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)}
-                    InputProps={{ startAdornment: <SearchOutlinedIcon fontSize="small" sx={{ mr: 1, color: "text.secondary" }} /> }} />
+                  <TextField
+                    fullWidth
+                    size="small"
+                    placeholder="Search filename, category, or summary…"
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    InputProps={{
+                      startAdornment: <SearchOutlinedIcon fontSize="small" sx={{ mr: 1, color: "text.secondary" }} />,
+                      endAdornment: searchQuery ? (
+                        <InputAdornment position="end">
+                          <IconButton size="small" aria-label="Clear search" onClick={() => setSearchQuery("")}>
+                            <ClearOutlinedIcon fontSize="small" />
+                          </IconButton>
+                        </InputAdornment>
+                      ) : undefined,
+                    }}
+                  />
                   <TextField select size="small" label="Category" value={categoryFilter} onChange={(e) => setCategoryFilter(e.target.value)} sx={{ minWidth: 160 }} SelectProps={{ native: true }}>
                     {categories.map((c) => <option key={c} value={c}>{c === "all" ? "All categories" : c}</option>)}
                   </TextField>
@@ -775,6 +792,21 @@ export default function App() {
                     <option value="processing">Processing</option>
                     <option value="failed">Failed</option>
                   </TextField>
+                  {(searchQuery || categoryFilter !== "all" || statusFilter !== "all") && (
+                    <Button
+                      size="small"
+                      variant="text"
+                      startIcon={<ClearOutlinedIcon />}
+                      onClick={() => {
+                        setSearchQuery("");
+                        setCategoryFilter("all");
+                        setStatusFilter("all");
+                      }}
+                      sx={{ alignSelf: { xs: "flex-start", sm: "center" }, whiteSpace: "nowrap" }}
+                    >
+                      Clear filters
+                    </Button>
+                  )}
                 </Stack>
                 <Divider />
                 {filteredDocuments.length > 0 && (
