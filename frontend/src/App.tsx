@@ -575,6 +575,43 @@ export default function App() {
             ))}
           </Box>
 
+          {usage && (
+            <Card elevation={0} sx={{ border: "1px solid #e1e7ef", borderRadius: 4 }}>
+              <CardContent sx={{ p: { xs: 2.5, md: 3 } }}>
+                <Stack spacing={2}>
+                  <Stack direction={{ xs: "column", sm: "row" }} spacing={1} justifyContent="space-between" alignItems={{ sm: "center" }}>
+                    <Box>
+                      <Typography variant="h6" fontWeight={800}>Usage today</Typography>
+                      <Typography variant="body2" color="text.secondary">Monitor your daily document intelligence activity.</Typography>
+                    </Box>
+                    <Chip size="small" label="Daily limits" variant="outlined" />
+                  </Stack>
+                  <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", sm: "repeat(3, 1fr)" }, gap: 2 }}>
+                    {[
+                      ["Uploads", usage.uploads, usage.limits.uploads_per_day],
+                      ["AI questions", usage.asks, usage.limits.asks_per_day],
+                      ["Exports", usage.exports, usage.limits.exports_per_day],
+                    ].map(([label, used, limit]) => {
+                      const percentage = limit > 0 ? Math.min(100, (Number(used) / Number(limit)) * 100) : 0;
+                      return (
+                        <Paper key={label} variant="outlined" sx={{ p: 1.75, borderRadius: 2.5 }}>
+                          <Stack direction="row" justifyContent="space-between" alignItems="baseline">
+                            <Typography variant="body2" color="text.secondary">{label}</Typography>
+                            <Typography variant="body2" fontWeight={800}>{used}/{limit}</Typography>
+                          </Stack>
+                          <LinearProgress variant="determinate" value={percentage} sx={{ mt: 1.25, height: 7, borderRadius: 5 }} />
+                          <Typography variant="caption" color="text.secondary" sx={{ mt: 0.75, display: "block" }}>
+                            {Math.max(0, Number(limit) - Number(used))} remaining
+                          </Typography>
+                        </Paper>
+                      );
+                    })}
+                  </Box>
+                </Stack>
+              </CardContent>
+            </Card>
+          )}
+
           <Card elevation={0} sx={{ border: "1px solid #dce4ed", borderRadius: 4 }}>
             <CardContent sx={{ p: { xs: 2.5, md: 4 } }}>
               <Stack spacing={2.5}>
