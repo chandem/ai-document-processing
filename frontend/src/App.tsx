@@ -6,6 +6,7 @@ import {
   Button,
   Card,
   CardContent,
+  Checkbox,
   Chip,
   CircularProgress,
   Container,
@@ -82,6 +83,8 @@ export default function App() {
   const [mode, setMode] = useState<"signin" | "signup" | "forgot" | "reset">("signin");
   const [file, setFile] = useState<File | null>(null);
   const [documents, setDocuments] = useState<any[]>([]);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [bulkDeleting, setBulkDeleting] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [categoryFilter, setCategoryFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState("all");
@@ -351,14 +354,89 @@ export default function App() {
     }
   }
 
+  function toggleDocumentSelection(documentId: string) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(String(documentId))) next.delete(String(documentId));
+      else next.add(String(documentId));
+      return next;
+    });
+  }
+
+  const visibleDocumentIds = useMemo(
+    () => filteredDocuments.map((doc) => String(doc.id)),
+    [filteredDocuments],
+  );
+
+  const allVisibleSelected =
+    visibleDocumentIds.length > 0 &&
+    visibleDocumentIds.every((id) => selectedIds.has(id));
+
+  function toggleSelectAllVisible() {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (allVisibleSelected) {
+        visibleDocumentIds.forEach((id) => next.delete(id));
+      } else {
+        visibleDocumentIds.forEach((id) => next.add(id));
+      }
+      return next;
+    });
+  }
+
+  async function handleBulkDelete() {
+    if (!session || selectedIds.size === 0) return;
+    const count = selectedIds.size;
+    if (!window.confirm(`Delete ${count} selected document${count === 1 ? "" : "s"} permanently?`)) return;
+
+    setBulkDeleting(true);
+    setLoading(true);
+    setError("");
+    setMessage("");
+    const ids = Array.from(selectedIds);
+    let deleted = 0;
+    let failed = 0;
+
+    try {
+      for (const id of ids) {
+        try {
+          await deleteDocument(id, session.access_token);
+          deleted += 1;
+        } catch {
+          failed += 1;
+        }
+      }
+      setSelectedIds(new Set());
+      if (selectedDocument && ids.includes(String(selectedDocument.id))) {
+        setSelectedDocument(null);
+      }
+      await refreshDocuments(session.access_token);
+      refreshUsage(session.access_token);
+      if (failed > 0) {
+        setError(`${deleted} document${deleted === 1 ? "" : "s"} deleted; ${failed} could not be deleted.`);
+      } else {
+        setMessage(`${deleted} document${deleted === 1 ? "" : "s"} deleted.`);
+      }
+    } finally {
+      setBulkDeleting(false);
+      setLoading(false);
+    }
+  }
+
   async function handleDelete(documentId: string) {
     if (!session) return;
     if (!window.confirm("Delete this document permanently?")) return;
     setLoading(true);
     try {
       await deleteDocument(documentId, session.access_token);
+      setSelectedIds((prev) => {
+        const next = new Set(prev);
+        next.delete(String(documentId));
+        return next;
+      });
       if (selectedDocument?.id === documentId) setSelectedDocument(null);
       await refreshDocuments(session.access_token);
+      refreshUsage(session.access_token);
       setMessage("Document deleted.");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Delete failed.");
@@ -417,8 +495,7 @@ export default function App() {
       setMessage("Correction saved.");
       await refreshDocuments(session.access_token);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Correction failed.");
-    } finally {
+      setError(err instanceof Error ? err.message : "Correction failed.");    } finally {
       setCorrecting(false);
     }
   }
@@ -660,11 +737,29 @@ export default function App() {
           <Card elevation={0} sx={{ border: "1px solid #e1e7ef", borderRadius: 4 }}>
             <CardContent sx={{ p: { xs: 2.5, md: 4 } }}>
               <Stack spacing={2}>
-                <Stack direction="row" alignItems="center">
-                  <Box sx={{ flexGrow: 1 }}>
+                <Stack direction={{ xs: "column", sm: "row" }} spacing={1.5} alignItems={{ sm: "center" }}>
+                  <Box sx={{ flexGrow: 1, minWidth: 0 }}>
                     <Typography variant="h5" fontWeight={800}>Your documents</Typography>
                     <Typography variant="body2" color="text.secondary">{filteredDocuments.length} shown · {documents.length} total</Typography>
                   </Box>
+                  {selectedIds.size > 0 && (
+                    <Stack direction="row" spacing={1} alignItems="center">
+                      <Chip size="small" color="primary" label={`${selectedIds.size} selected`} />
+                      <Button
+                        size="small"
+                        color="error"
+                        variant="outlined"
+                        startIcon={<DeleteOutlineIcon />}
+                        onClick={handleBulkDelete}
+                        disabled={bulkDeleting || loading}
+                      >
+                        {bulkDeleting ? "Deleting…" : "Delete selected"}
+                      </Button>
+                      <Button size="small" variant="text" onClick={() => setSelectedIds(new Set())} disabled={bulkDeleting}>
+                        Clear
+                      </Button>
+                    </Stack>
+                  )}
                   <Tooltip title="Export all as CSV"><span><IconButton onClick={handleExportCsvAll} disabled={exporting || !documents.length}><TableChartOutlinedIcon /></IconButton></span></Tooltip>
                   <Tooltip title="Refresh"><span><IconButton onClick={() => refreshDocuments()} disabled={loadingDocuments}><RefreshOutlinedIcon /></IconButton></span></Tooltip>
                 </Stack>
@@ -682,6 +777,29 @@ export default function App() {
                   </TextField>
                 </Stack>
                 <Divider />
+                {filteredDocuments.length > 0 && (
+                  <Paper variant="outlined" sx={{ px: 1.5, py: 0.75, borderRadius: 2.5 }}>
+                    <Stack direction="row" alignItems="center" justifyContent="space-between">
+                      <Stack direction="row" spacing={1} alignItems="center">
+                        <Checkbox
+                          size="small"
+                          checked={allVisibleSelected}
+                          indeterminate={selectedIds.size > 0 && !allVisibleSelected}
+                          onChange={toggleSelectAllVisible}
+                          disabled={bulkDeleting}
+                        />
+                        <Typography variant="body2" fontWeight={700}>
+                          {allVisibleSelected ? "All visible selected" : "Select visible documents"}
+                        </Typography>
+                      </Stack>
+                      {selectedIds.size > 0 && (
+                        <Typography variant="caption" color="text.secondary">
+                          {selectedIds.size} selected
+                        </Typography>
+                      )}
+                    </Stack>
+                  </Paper>
+                )}
                 {loadingDocuments && <LinearProgress />}
                 {filteredDocuments.length === 0 && !loadingDocuments ? (
                   <Box sx={{ py: 6, textAlign: "center" }}>
@@ -692,8 +810,24 @@ export default function App() {
                 ) : (
                   <Stack spacing={1.5}>
                     {filteredDocuments.map((doc) => (
-                      <Paper key={doc.id} variant="outlined" sx={{ p: 2, borderRadius: 3 }}>
+                      <Paper
+                        key={doc.id}
+                        variant="outlined"
+                        sx={{
+                          p: 2,
+                          borderRadius: 3,
+                          borderColor: selectedIds.has(String(doc.id)) ? "primary.main" : undefined,
+                          bgcolor: selectedIds.has(String(doc.id)) ? "rgba(25,118,210,0.03)" : undefined,
+                        }}
+                      >
                         <Stack direction={{ xs: "column", sm: "row" }} spacing={1.5} alignItems={{ sm: "center" }}>
+                          <Checkbox
+                            size="small"
+                            checked={selectedIds.has(String(doc.id))}
+                            onChange={() => toggleDocumentSelection(String(doc.id))}
+                            disabled={bulkDeleting}
+                            sx={{ alignSelf: { xs: "flex-start", sm: "center" } }}
+                          />
                           <DescriptionOutlinedIcon color="primary" />
                           <Box sx={{ flexGrow: 1, minWidth: 0 }}>
                             <Typography fontWeight={750} noWrap>{doc.filename}</Typography>
