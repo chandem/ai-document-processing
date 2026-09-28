@@ -150,8 +150,8 @@ export default function DocumentDialog({
   }
 
   return (
-    <Dialog open={Boolean(selectedDocument)} onClose={onClose} fullWidth maxWidth="lg">
-      <DialogTitle sx={{ fontWeight: 800 }}>{selectedDocument.filename}</DialogTitle>
+    <Dialog\n      open={Boolean(selectedDocument)}\n      onClose={onClose}\n      fullWidth\n      maxWidth="lg"\n      fullScreen={false}\n      PaperProps={{ sx: { width: "100%", maxHeight: { xs: "100dvh", sm: "92vh" }, m: { xs: 0, sm: 2 }, borderRadius: { xs: 0, sm: 2 } } }}\n    >
+      <DialogTitle sx={{ fontWeight: 800, pr: 7 }}>\n        <Typography component="div" fontWeight={800} sx={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>\n          {selectedDocument.filename}\n        </Typography>\n        <Typography variant="caption" color="text.secondary">Document workspace</Typography>\n      </DialogTitle>
       <DialogContent dividers>
         <Stack spacing={2.5}>
           <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
@@ -212,7 +212,7 @@ export default function DocumentDialog({
               </Typography>
               <Paper
                 variant="outlined"
-                sx={{ mt: 1, p: 1, maxHeight: 360, overflow: "auto", bgcolor: "#fafafa" }}
+                sx={{ mt: 1, p: 1, maxHeight: { xs: 300, sm: 360 }, overflow: "auto", bgcolor: "#fafafa" }}
               >
                 {isImage && (
                   <Box
@@ -227,7 +227,7 @@ export default function DocumentDialog({
                     component="iframe"
                     src={previewUrl}
                     title={selectedDocument.filename}
-                    sx={{ width: "100%", height: 320, border: 0 }}
+                    sx={{ width: "100%", height: { xs: 280, sm: 320 }, border: 0 }}
                   />
                 )}
                 {isText && !isImage && !isPdf && (
@@ -511,7 +511,7 @@ export default function DocumentDialog({
           </Box>
         </Stack>
       </DialogContent>
-      <DialogActions sx={{ flexWrap: "wrap", gap: 1 }}>
+      <DialogActions sx={{ flexWrap: "wrap", gap: 1, px: { xs: 1.5, sm: 2 }, py: 1.5, position: "sticky", bottom: 0, bgcolor: "background.paper", zIndex: 2 }}>
         <Button onClick={onClose}>Close</Button>
         <Button
           startIcon={<DownloadOutlinedIcon />}
