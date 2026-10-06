@@ -150,8 +150,19 @@ export default function DocumentDialog({
   }
 
   return (
-    <Dialog\n      open={Boolean(selectedDocument)}\n      onClose={onClose}\n      fullWidth\n      maxWidth="lg"\n      fullScreen={false}\n      PaperProps={{ sx: { width: "100%", maxHeight: { xs: "100dvh", sm: "92vh" }, m: { xs: 0, sm: 2 }, borderRadius: { xs: 0, sm: 2 } } }}\n    >
-      <DialogTitle sx={{ fontWeight: 800, pr: 7 }}>\n        <Typography component="div" fontWeight={800} sx={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>\n          {selectedDocument.filename}\n        </Typography>\n        <Typography variant="caption" color="text.secondary">Document workspace</Typography>\n      </DialogTitle>
+    <Dialog
+      open={Boolean(selectedDocument)}
+      onClose={onClose}
+      fullWidth
+      maxWidth="lg"
+      fullScreen={false}
+      PaperProps={{ sx: { width: "100%", maxHeight: "90vh" } }}
+    >
+      <DialogTitle sx={{ fontWeight: 800, pr: 7 }}>
+        <Typography component="div" fontWeight={800} sx={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+          {selectedDocument.filename}
+        </Typography>
+      </DialogTitle>
       <DialogContent dividers>
         <Stack spacing={2.5}>
           <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
