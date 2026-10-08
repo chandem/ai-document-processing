@@ -365,27 +365,6 @@ export default function App() {
     });
   }
 
-  const visibleDocumentIds = useMemo(
-    () => filteredDocuments.map((doc) => String(doc.id)),
-    [filteredDocuments],
-  );
-
-  const allVisibleSelected =
-    visibleDocumentIds.length > 0 &&
-    visibleDocumentIds.every((id) => selectedIds.has(id));
-
-  function toggleSelectAllVisible() {
-    setSelectedIds((prev) => {
-      const next = new Set(prev);
-      if (allVisibleSelected) {
-        visibleDocumentIds.forEach((id) => next.delete(id));
-      } else {
-        visibleDocumentIds.forEach((id) => next.add(id));
-      }
-      return next;
-    });
-  }
-
   async function handleBulkDelete() {
     if (!session || selectedIds.size === 0) return;
     const count = selectedIds.size;
@@ -517,6 +496,27 @@ export default function App() {
     return ["all", ...Array.from(new Set(values)).sort()];
   }, [documents]);
 
+
+  const visibleDocumentIds = useMemo(
+    () => filteredDocuments.map((doc) => String(doc.id)),
+    [filteredDocuments],
+  );
+
+  const allVisibleSelected =
+    visibleDocumentIds.length > 0 &&
+    visibleDocumentIds.every((id) => selectedIds.has(id));
+
+  function toggleSelectAllVisible() {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (allVisibleSelected) {
+        visibleDocumentIds.forEach((id) => next.delete(id));
+      } else {
+        visibleDocumentIds.forEach((id) => next.add(id));
+      }
+      return next;
+    });
+  }
   const stats = useMemo(() => ({
     total: documents.length,
     completed: documents.filter((d) => d.status === "completed").length,
@@ -671,7 +671,7 @@ export default function App() {
                       ["AI questions", usage.asks, usage.limits.asks_per_day],
                       ["Exports", usage.exports, usage.limits.exports_per_day],
                     ].map(([label, used, limit]) => {
-                      const percentage = limit > 0 ? Math.min(100, (Number(used) / Number(limit)) * 100) : 0;
+                      const percentage = Number(limit) > 0 ? Math.min(100, (Number(used) / Number(limit)) * 100) : 0;
                       return (
                         <Paper key={label} variant="outlined" sx={{ p: 1.75, borderRadius: 2.5 }}>
                           <Stack direction="row" justifyContent="space-between" alignItems="baseline">
