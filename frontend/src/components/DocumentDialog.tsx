@@ -35,8 +35,9 @@ function friendlyProcessingError(value: unknown) {
   if (
     normalized.includes("429") ||
     normalized.includes("resource_exhausted") ||
-    normalized.includes("quota exceeded") ||
-    normalized.includes("rate limit")
+    normalized.includes("quota") ||
+    normalized.includes("rate limit") ||
+    normalized.includes("rate limiting")
   ) {
     return {
       title: "AI enrichment temporarily unavailable.",
