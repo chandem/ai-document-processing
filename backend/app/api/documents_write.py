@@ -54,7 +54,7 @@ def _now_iso() -> str:
 def _safe_processing_error(exc: Exception, *, retry: bool = False) -> str:
     """Return a safe, user-facing processing error without leaking provider details."""
     message = str(exc).lower()
-    if any(marker in message for marker in ("429", "resource_exhausted", "quota exceeded", "rate limit")):
+    if any(marker in message for marker in ("429", "resource_exhausted", "quota", "rate limit", "rate limiting")):
         return (
             "AI enrichment temporarily unavailable due to provider quota or rate limiting. "
             "Extracted text is preserved. Retry when the AI quota becomes available."
