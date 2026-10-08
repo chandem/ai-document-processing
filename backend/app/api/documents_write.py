@@ -51,6 +51,17 @@ def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def _safe_processing_error(exc: Exception, *, retry: bool = False) -> str:
+    """Return a safe, user-facing processing error without leaking provider details."""
+    message = str(exc).lower()
+    if any(marker in message for marker in ("429", "resource_exhausted", "quota exceeded", "rate limit")):
+        return (
+            "AI enrichment temporarily unavailable due to provider quota or rate limiting. "
+            "Extracted text is preserved. Retry when the AI quota becomes available."
+        )
+    return "Retry failed. Please try again later." if retry else "Processing failed. You can retry this document."
+
+
 router = APIRouter(prefix="/api/v1/documents", tags=["documents"])
 
 
@@ -92,8 +103,8 @@ async def _process_persisted_document(
                 "completed_at": _now_iso(),
             }
         ).eq("id", job_id).eq("document_id", document_id).execute()
-    except Exception:
-        safe_error = "Processing failed. You can retry this document."
+    except Exception as exp:
+        safe_error = _safe_processing_error(exp)
         try:
             client.table("documents").update(
                 {
