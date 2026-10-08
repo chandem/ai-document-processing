@@ -63,7 +63,7 @@ def _now_iso() -> str:
 def _safe_processing_error(exc: Exception, *, retry: bool = False) -> str:
     """Return a safe, user-facing processing error without leaking provider details."""
     message = str(exc).lower()
-    if any(marker in message for marker in ("429", "resource_exhausted", "quota exceeded", "rate limit")):
+    if any(marker in message for marker in ("429", "resource_exhausted", "quota", "rate limit", "rate limiting")):
         return (
             "AI enrichment temporarily unavailable due to provider quota or rate limiting. "
             "Extracted text is preserved. Retry when the AI quota becomes available."
@@ -330,13 +330,25 @@ async def retry_document(document_id: str, user=Depends(get_current_user)):
             )
 
         retry_count = int(doc.get("retry_count") or 0) + 1
-        client.table("documents").update(
-            {
-                "status": "processing",
-                "error_message": None,
-                "retry_count": retry_count,
-            }
-        ).eq("id", document_id).eq("user_id", str(user.id)).execute()
+        claim = (
+            client.table("documents")
+            .update(
+                {
+                    "status": "processing",
+                    "error_message": None,
+                    "retry_count": retry_count,
+                }
+            )
+            .eq("id", document_id)
+            .eq("user_id", str(user.id))
+            .eq("status", "failed")
+            .execute()
+        )
+        if not claim.data:
+            raise HTTPException(
+                status_code=409,
+                detail="Document is already being retried or is no longer failed.",
+            )
 
         job_id = str(uuid4())
         client.table("processing_jobs").insert(
