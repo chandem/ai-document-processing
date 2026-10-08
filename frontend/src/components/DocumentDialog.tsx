@@ -29,6 +29,24 @@ function formatBytes(bytes = 0) {
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
+function friendlyProcessingError(value: unknown) {
+  const message = String(value ?? "");
+  const normalized = message.toLowerCase();
+  if (
+    normalized.includes("429") ||
+    normalized.includes("resource_exhausted") ||
+    normalized.includes("quota exceeded") ||
+    normalized.includes("rate limit")
+  ) {
+    return {
+      title: "AI enrichment temporarily unavailable.",
+      detail:
+        "Your document has been processed and its extracted text is preserved. " +
+        "Gemini AI enrichment can be retried when the quota becomes available.",
+    };
+  }
+  return { title: "", detail: message };
+}
 
 type Props = {
   document: any | null;
@@ -210,11 +228,21 @@ export default function DocumentDialog({
             )}
           </Stack>
 
-          {selectedDocument.error_message && (
-            <Typography color="error" variant="body2">
-              {selectedDocument.error_message}
-            </Typography>
-          )}
+          {selectedDocument.error_message && (() => {
+            const friendly = friendlyProcessingError(selectedDocument.error_message);
+            return (
+              <Paper variant="outlined" sx={{ p: 1.5, bgcolor: friendly.title ? "rgba(255,152,0,0.06)" : undefined }}>
+                <Typography color={friendly.title ? "warning.dark" : "error"} variant="body2" fontWeight={friendly.title ? 700 : 400}>
+                  {friendly.title || "Processing error"}
+                </Typography>
+                {friendly.detail && (
+                  <Typography color="text.secondary" variant="body2" sx={{ mt: 0.5 }}>
+                    {friendly.detail}
+                  </Typography>
+                )}
+              </Paper>
+            );
+          })()}
 
           {previewUrl && (isImage || isPdf || isText) && (
             <Box>
@@ -480,11 +508,14 @@ export default function DocumentDialog({
                     {job.stage} · {job.status}
                     {job.attempt != null ? ` · attempt ${job.attempt}` : ""}
                   </Typography>
-                  {job.error_message && (
-                    <Typography variant="caption" color="error">
-                      {job.error_message}
-                    </Typography>
-                  )}
+                  {job.error_message && (() => {
+                    const friendly = friendlyProcessingError(job.error_message);
+                    return (
+                      <Typography variant="caption" color={friendly.title ? "warning.dark" : "error"} sx={{ display: "block", mt: 0.25 }}>
+                        {friendly.title ? `${friendly.title} ${friendly.detail}` : friendly.detail}
+                      </Typography>
+                    );
+                  })()}
                 </Paper>
               ))}
             </Stack>
