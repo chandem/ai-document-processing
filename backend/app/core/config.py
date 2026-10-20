@@ -13,6 +13,8 @@ class Settings(BaseSettings):
     supabase_url: str | None = None
     supabase_publishable_key: str | None = None
     supabase_service_role_key: str | None = None
+    # Shared secret for authenticated server-to-server integrations.
+    integration_service_token: str | None = None
     # Primary frontend origin (used for CORS)
     frontend_url: str = "http://localhost:5173"
     # Optional comma-separated extra origins
